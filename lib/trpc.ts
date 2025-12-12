@@ -10,9 +10,10 @@ const getBaseUrl = () => {
   const url = process.env.EXPO_PUBLIC_RORK_API_BASE_URL;
 
   if (!url) {
-    throw new Error(
-      "Rork did not set EXPO_PUBLIC_RORK_API_BASE_URL, please use support",
+    console.warn(
+      "EXPO_PUBLIC_RORK_API_BASE_URL not set, backend features will be unavailable",
     );
+    return "https://placeholder.local";
   }
 
   return url;
@@ -23,6 +24,14 @@ export const trpcClient = trpc.createClient({
     httpLink({
       url: `${getBaseUrl()}/api/trpc`,
       transformer: superjson,
+      fetch: async (url, options) => {
+        try {
+          return await fetch(url, options);
+        } catch (error) {
+          console.error("tRPC fetch error:", error);
+          throw error;
+        }
+      },
     }),
   ],
 });
