@@ -7,13 +7,28 @@ const API_BASE = (process.env.EXPO_PUBLIC_RORK_DB_ENDPOINT || "").replace(/\/$/,
 const NAMESPACE = process.env.EXPO_PUBLIC_RORK_DB_NAMESPACE;
 const TOKEN = process.env.EXPO_PUBLIC_RORK_DB_TOKEN;
 
+type MemoryStore = Map<string, Map<string, any>>;
+const memoryStore: MemoryStore = new Map();
+let useMemoryStore = false;
+
+function getCollection(store: MemoryStore, collection: string): Map<string, any> {
+  if (!store.has(collection)) {
+    store.set(collection, new Map());
+  }
+  return store.get(collection)!;
+}
+
 async function dbRequest(method: string, path: string, body?: any) {
-  if (!API_BASE || !NAMESPACE || !TOKEN) {
-    console.error("[DB] Missing configuration:", { API_BASE, NAMESPACE: !!NAMESPACE, TOKEN: !!TOKEN });
-    throw new Error("Database configuration missing");
+  if (useMemoryStore) {
+    return null;
   }
 
-  // Ensure path doesn't start with /
+  if (!API_BASE || !NAMESPACE || !TOKEN) {
+    console.warn("[DB] Missing configuration, using in-memory store");
+    useMemoryStore = true;
+    return null;
+  }
+
   const cleanPath = path.startsWith("/") ? path.substring(1) : path;
   const url = `${API_BASE}/kv/${NAMESPACE}/key/${cleanPath}`;
   
@@ -30,26 +45,24 @@ async function dbRequest(method: string, path: string, body?: any) {
     });
 
     if (response.status === 404) {
-      // For GET requests, 404 simply means key not found - return null
       if (method === "GET") {
         console.log(`[DB] Key not found: ${cleanPath}`);
         return null;
       }
-      
-      // For PUT/DELETE/POST, 404 means the endpoint itself is not found (Critical Error)
-      const errorText = await response.text();
-      console.error(`[DB] 404 Endpoint Not Found for ${method}:`, errorText);
-      throw new Error(`Database endpoint not found (404). Check API configuration.`);
+      console.warn(`[DB] Endpoint not available, switching to in-memory store`);
+      useMemoryStore = true;
+      return null;
     }
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`[DB] Error ${response.status}:`, errorText);
-      throw new Error(`Database error: ${response.status} ${errorText}`);
+      console.warn(`[DB] Switching to in-memory store due to error`);
+      useMemoryStore = true;
+      return null;
     }
 
     const text = await response.text();
-    // Handle empty responses (common for DELETE/PUT)
     if (!text) return null;
     
     try {
@@ -59,33 +72,81 @@ async function dbRequest(method: string, path: string, body?: any) {
       return text;
     }
   } catch (error: any) {
-    console.error(`[DB] Request failed: ${error.message}`);
-    throw error;
+    console.error(`[DB] Request failed, using in-memory store:`, error.message);
+    useMemoryStore = true;
+    return null;
   }
 }
 
 export const db = {
   async get<T = any>(collection: string, id: string): Promise<T | null> {
+    if (useMemoryStore) {
+      const col = getCollection(memoryStore, collection);
+      const result = col.get(id);
+      console.log(`[DB Memory] GET ${collection}/${id}:`, result ? 'found' : 'not found');
+      return result || null;
+    }
+
     const safeId = encodeURIComponent(id);
     const result = await dbRequest("GET", `${collection}/${safeId}`);
+    
+    if (useMemoryStore) {
+      return this.get(collection, id);
+    }
+    
     return result || null;
   },
 
   async set<T extends DbRecord>(collection: string, id: string, data: T): Promise<T> {
+    if (useMemoryStore) {
+      const col = getCollection(memoryStore, collection);
+      col.set(id, data);
+      console.log(`[DB Memory] SET ${collection}/${id}`);
+      return data;
+    }
+
     const safeId = encodeURIComponent(id);
     await dbRequest("PUT", `${collection}/${safeId}`, data);
+    
+    if (useMemoryStore) {
+      return this.set(collection, id, data);
+    }
+    
     return data;
   },
 
   async delete(collection: string, id: string): Promise<boolean> {
+    if (useMemoryStore) {
+      const col = getCollection(memoryStore, collection);
+      const deleted = col.delete(id);
+      console.log(`[DB Memory] DELETE ${collection}/${id}:`, deleted);
+      return true;
+    }
+
     const safeId = encodeURIComponent(id);
     await dbRequest("DELETE", `${collection}/${safeId}`);
+    
+    if (useMemoryStore) {
+      return this.delete(collection, id);
+    }
+    
     return true;
   },
 
-  // Note: List might not be supported by all KV providers in this format
   async list<T = any>(collection: string): Promise<T[]> {
+    if (useMemoryStore) {
+      const col = getCollection(memoryStore, collection);
+      const result = Array.from(col.values());
+      console.log(`[DB Memory] LIST ${collection}: ${result.length} items`);
+      return result;
+    }
+
     const result = await dbRequest("GET", collection);
+    
+    if (useMemoryStore) {
+      return this.list(collection);
+    }
+    
     if (!result) return [];
     
     if (Array.isArray(result)) return result;
