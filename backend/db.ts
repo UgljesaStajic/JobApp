@@ -14,7 +14,7 @@ async function dbRequest(method: string, path: string, body?: any): Promise<any>
   }
 
   const namespace = DB_NAMESPACE || 'default';
-  const url = `${DB_ENDPOINT}/kv/${namespace}/keys${path}`;
+  const url = `${DB_ENDPOINT}/kv/${namespace}/key${path}`;
   
   console.log(`[DB] ${method} ${url}`);
   console.log(`[DB] Namespace: ${namespace}`);
