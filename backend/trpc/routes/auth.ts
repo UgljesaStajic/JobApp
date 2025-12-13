@@ -1,23 +1,28 @@
 import * as z from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, publicProcedure } from "../create-context";
+import { db } from "@/backend/db";
 
-const users = new Map<string, {
+interface UserData {
   id: string;
   email: string;
   passwordHash: string;
   name: string;
   subscription: string;
-  createdAt: Date;
+  createdAt: string;
   resumes: any[];
   jobs: any[];
   applications: any[];
   coverLetters: any[];
   interviewSessions: any[];
   preferences: any;
-}>();
+}
 
-const sessions = new Map<string, { userId: string; expiresAt: Date }>();
+interface SessionData {
+  id: string;
+  userId: string;
+  expiresAt: string;
+}
 
 function hashPassword(password: string): string {
   return Buffer.from(password).toString("base64");
@@ -31,6 +36,10 @@ function generateSessionToken(): string {
   return `session_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 }
 
+function sanitizeEmail(email: string): string {
+  return email.toLowerCase().replace(/[^a-z0-9]/g, "_");
+}
+
 export const authRouter = createTRPCRouter({
   register: publicProcedure
     .input(z.object({
@@ -38,10 +47,13 @@ export const authRouter = createTRPCRouter({
       password: z.string().min(8),
       name: z.string().min(1),
     }))
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       console.log("Register attempt:", input.email);
       
-      if (users.has(input.email)) {
+      const emailKey = sanitizeEmail(input.email);
+      const existingUser = await db.get<UserData>("users", emailKey);
+      
+      if (existingUser) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "An account with this email already exists",
@@ -49,13 +61,13 @@ export const authRouter = createTRPCRouter({
       }
 
       const userId = `user_${Date.now()}`;
-      const user = {
+      const user: UserData = {
         id: userId,
-        email: input.email,
+        email: input.email.toLowerCase(),
         passwordHash: hashPassword(input.password),
         name: input.name,
         subscription: "free",
-        createdAt: new Date(),
+        createdAt: new Date().toISOString(),
         resumes: [],
         jobs: [],
         applications: [],
@@ -72,13 +84,15 @@ export const authRouter = createTRPCRouter({
         },
       };
 
-      users.set(input.email, user);
+      await db.set("users", emailKey, user);
 
       const sessionToken = generateSessionToken();
-      sessions.set(sessionToken, {
+      const session: SessionData = {
+        id: sessionToken,
         userId,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      });
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+      await db.set("sessions", sessionToken, session);
 
       console.log("User registered successfully:", input.email);
 
@@ -99,29 +113,33 @@ export const authRouter = createTRPCRouter({
       email: z.string().email(),
       password: z.string(),
     }))
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       console.log("Login attempt:", input.email);
       
-      const user = users.get(input.email);
+      const emailKey = sanitizeEmail(input.email);
+      const user = await db.get<UserData>("users", emailKey);
+      
       if (!user) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "No account found with this email address",
+          message: "No account found with this email address. Please register first.",
         });
       }
 
       if (!verifyPassword(input.password, user.passwordHash)) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Password incorrect. Please try again.",
+          message: "Incorrect password. Please try again.",
         });
       }
 
       const sessionToken = generateSessionToken();
-      sessions.set(sessionToken, {
+      const session: SessionData = {
+        id: sessionToken,
         userId: user.id,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      });
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+      await db.set("sessions", sessionToken, session);
 
       console.log("Login successful:", input.email);
 
@@ -143,20 +161,21 @@ export const authRouter = createTRPCRouter({
       email: z.string().email(),
       name: z.string(),
     }))
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       console.log("Google auth:", input.email);
       
-      let user = users.get(input.email);
+      const emailKey = sanitizeEmail(input.email);
+      let user = await db.get<UserData>("users", emailKey);
       
       if (!user) {
         const userId = `user_${Date.now()}`;
         user = {
           id: userId,
-          email: input.email,
+          email: input.email.toLowerCase(),
           passwordHash: "",
           name: input.name,
           subscription: "free",
-          createdAt: new Date(),
+          createdAt: new Date().toISOString(),
           resumes: [],
           jobs: [],
           applications: [],
@@ -172,14 +191,16 @@ export const authRouter = createTRPCRouter({
             language: "en",
           },
         };
-        users.set(input.email, user);
+        await db.set("users", emailKey, user);
       }
 
       const sessionToken = generateSessionToken();
-      sessions.set(sessionToken, {
+      const session: SessionData = {
+        id: sessionToken,
         userId: user.id,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      });
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+      await db.set("sessions", sessionToken, session);
 
       return {
         sessionToken,
@@ -197,16 +218,19 @@ export const authRouter = createTRPCRouter({
     .input(z.object({
       sessionToken: z.string(),
     }))
-    .query(({ input }) => {
-      const session = sessions.get(input.sessionToken);
-      if (!session || session.expiresAt < new Date()) {
+    .query(async ({ input }) => {
+      const session = await db.get<SessionData>("sessions", input.sessionToken);
+      
+      if (!session || new Date(session.expiresAt) < new Date()) {
         throw new TRPCError({
           code: "UNAUTHORIZED",
           message: "Invalid or expired session",
         });
       }
 
-      const user = Array.from(users.values()).find(u => u.id === session.userId);
+      const users = await db.list<UserData>("users");
+      const user = users.find(u => u.id === session.userId);
+      
       if (!user) {
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -219,11 +243,11 @@ export const authRouter = createTRPCRouter({
         email: user.email,
         name: user.name,
         subscription: user.subscription,
-        resumes: user.resumes,
-        jobs: user.jobs,
-        applications: user.applications,
-        coverLetters: user.coverLetters,
-        interviewSessions: user.interviewSessions,
+        resumes: user.resumes || [],
+        jobs: user.jobs || [],
+        applications: user.applications || [],
+        coverLetters: user.coverLetters || [],
+        interviewSessions: user.interviewSessions || [],
         preferences: user.preferences,
       };
     }),
@@ -237,16 +261,19 @@ export const authRouter = createTRPCRouter({
         subscription: z.string().optional(),
       }),
     }))
-    .mutation(({ input }) => {
-      const session = sessions.get(input.sessionToken);
-      if (!session || session.expiresAt < new Date()) {
+    .mutation(async ({ input }) => {
+      const session = await db.get<SessionData>("sessions", input.sessionToken);
+      
+      if (!session || new Date(session.expiresAt) < new Date()) {
         throw new TRPCError({
           code: "UNAUTHORIZED",
           message: "Invalid or expired session",
         });
       }
 
-      const user = Array.from(users.values()).find(u => u.id === session.userId);
+      const users = await db.list<UserData>("users");
+      const user = users.find(u => u.id === session.userId);
+      
       if (!user) {
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -259,6 +286,9 @@ export const authRouter = createTRPCRouter({
         user.preferences = { ...user.preferences, ...input.updates.preferences };
       }
       if (input.updates.subscription) user.subscription = input.updates.subscription;
+
+      const emailKey = sanitizeEmail(user.email);
+      await db.set("users", emailKey, user);
 
       return {
         id: user.id,
@@ -274,16 +304,19 @@ export const authRouter = createTRPCRouter({
       sessionToken: z.string(),
       resume: z.any(),
     }))
-    .mutation(({ input }) => {
-      const session = sessions.get(input.sessionToken);
-      if (!session || session.expiresAt < new Date()) {
+    .mutation(async ({ input }) => {
+      const session = await db.get<SessionData>("sessions", input.sessionToken);
+      
+      if (!session || new Date(session.expiresAt) < new Date()) {
         throw new TRPCError({
           code: "UNAUTHORIZED",
           message: "Invalid or expired session",
         });
       }
 
-      const user = Array.from(users.values()).find(u => u.id === session.userId);
+      const users = await db.list<UserData>("users");
+      const user = users.find(u => u.id === session.userId);
+      
       if (!user) {
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -291,12 +324,17 @@ export const authRouter = createTRPCRouter({
         });
       }
 
+      if (!user.resumes) user.resumes = [];
+      
       const existingIndex = user.resumes.findIndex(r => r.id === input.resume.id);
       if (existingIndex >= 0) {
         user.resumes[existingIndex] = input.resume;
       } else {
         user.resumes.push(input.resume);
       }
+
+      const emailKey = sanitizeEmail(user.email);
+      await db.set("users", emailKey, user);
 
       return { success: true };
     }),
@@ -306,16 +344,19 @@ export const authRouter = createTRPCRouter({
       sessionToken: z.string(),
       resumeId: z.string(),
     }))
-    .mutation(({ input }) => {
-      const session = sessions.get(input.sessionToken);
-      if (!session || session.expiresAt < new Date()) {
+    .mutation(async ({ input }) => {
+      const session = await db.get<SessionData>("sessions", input.sessionToken);
+      
+      if (!session || new Date(session.expiresAt) < new Date()) {
         throw new TRPCError({
           code: "UNAUTHORIZED",
           message: "Invalid or expired session",
         });
       }
 
-      const user = Array.from(users.values()).find(u => u.id === session.userId);
+      const users = await db.list<UserData>("users");
+      const user = users.find(u => u.id === session.userId);
+      
       if (!user) {
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -323,7 +364,11 @@ export const authRouter = createTRPCRouter({
         });
       }
 
-      user.resumes = user.resumes.filter(r => r.id !== input.resumeId);
+      user.resumes = (user.resumes || []).filter(r => r.id !== input.resumeId);
+      
+      const emailKey = sanitizeEmail(user.email);
+      await db.set("users", emailKey, user);
+
       return { success: true };
     }),
 
@@ -332,16 +377,19 @@ export const authRouter = createTRPCRouter({
       sessionToken: z.string(),
       job: z.any(),
     }))
-    .mutation(({ input }) => {
-      const session = sessions.get(input.sessionToken);
-      if (!session || session.expiresAt < new Date()) {
+    .mutation(async ({ input }) => {
+      const session = await db.get<SessionData>("sessions", input.sessionToken);
+      
+      if (!session || new Date(session.expiresAt) < new Date()) {
         throw new TRPCError({
           code: "UNAUTHORIZED",
           message: "Invalid or expired session",
         });
       }
 
-      const user = Array.from(users.values()).find(u => u.id === session.userId);
+      const users = await db.list<UserData>("users");
+      const user = users.find(u => u.id === session.userId);
+      
       if (!user) {
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -349,12 +397,17 @@ export const authRouter = createTRPCRouter({
         });
       }
 
+      if (!user.jobs) user.jobs = [];
+
       const existingIndex = user.jobs.findIndex(j => j.id === input.job.id);
       if (existingIndex >= 0) {
         user.jobs[existingIndex] = input.job;
       } else {
         user.jobs.push(input.job);
       }
+
+      const emailKey = sanitizeEmail(user.email);
+      await db.set("users", emailKey, user);
 
       return { success: true };
     }),
@@ -364,16 +417,19 @@ export const authRouter = createTRPCRouter({
       sessionToken: z.string(),
       jobId: z.string(),
     }))
-    .mutation(({ input }) => {
-      const session = sessions.get(input.sessionToken);
-      if (!session || session.expiresAt < new Date()) {
+    .mutation(async ({ input }) => {
+      const session = await db.get<SessionData>("sessions", input.sessionToken);
+      
+      if (!session || new Date(session.expiresAt) < new Date()) {
         throw new TRPCError({
           code: "UNAUTHORIZED",
           message: "Invalid or expired session",
         });
       }
 
-      const user = Array.from(users.values()).find(u => u.id === session.userId);
+      const users = await db.list<UserData>("users");
+      const user = users.find(u => u.id === session.userId);
+      
       if (!user) {
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -381,7 +437,11 @@ export const authRouter = createTRPCRouter({
         });
       }
 
-      user.jobs = user.jobs.filter(j => j.id !== input.jobId);
+      user.jobs = (user.jobs || []).filter(j => j.id !== input.jobId);
+      
+      const emailKey = sanitizeEmail(user.email);
+      await db.set("users", emailKey, user);
+
       return { success: true };
     }),
 
@@ -389,8 +449,8 @@ export const authRouter = createTRPCRouter({
     .input(z.object({
       sessionToken: z.string(),
     }))
-    .mutation(({ input }) => {
-      sessions.delete(input.sessionToken);
+    .mutation(async ({ input }) => {
+      await db.delete("sessions", input.sessionToken);
       return { success: true };
     }),
 });

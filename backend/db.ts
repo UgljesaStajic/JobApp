@@ -1,0 +1,82 @@
+const DB_ENDPOINT = process.env.EXPO_PUBLIC_RORK_DB_ENDPOINT;
+const DB_NAMESPACE = process.env.EXPO_PUBLIC_RORK_DB_NAMESPACE;
+const DB_TOKEN = process.env.EXPO_PUBLIC_RORK_DB_TOKEN;
+
+interface DbRecord {
+  id: string;
+  [key: string]: any;
+}
+
+async function dbRequest(method: string, path: string, body?: any): Promise<any> {
+  if (!DB_ENDPOINT || !DB_TOKEN) {
+    console.error("Database not configured");
+    throw new Error("Database not configured");
+  }
+
+  const url = `${DB_ENDPOINT}/${DB_NAMESPACE}${path}`;
+  
+  console.log(`[DB] ${method} ${path}`);
+  
+  const response = await fetch(url, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${DB_TOKEN}`,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    console.error(`[DB] Error: ${response.status} ${text}`);
+    throw new Error(`Database error: ${response.status}`);
+  }
+
+  const text = await response.text();
+  if (!text) return null;
+  
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+export const db = {
+  async get<T = any>(collection: string, id: string): Promise<T | null> {
+    try {
+      const result = await dbRequest("GET", `/${collection}/${id}`);
+      return result as T;
+    } catch {
+      console.log(`[DB] Record not found: ${collection}/${id}`);
+      return null;
+    }
+  },
+
+  async set<T extends DbRecord>(collection: string, id: string, data: T): Promise<T> {
+    await dbRequest("PUT", `/${collection}/${id}`, data);
+    return data;
+  },
+
+  async delete(collection: string, id: string): Promise<boolean> {
+    try {
+      await dbRequest("DELETE", `/${collection}/${id}`);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  async list<T = any>(collection: string): Promise<T[]> {
+    try {
+      const result = await dbRequest("GET", `/${collection}`);
+      if (Array.isArray(result)) return result as T[];
+      if (result && typeof result === "object") {
+        return Object.values(result) as T[];
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  },
+};
