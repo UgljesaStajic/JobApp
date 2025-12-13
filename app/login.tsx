@@ -128,15 +128,30 @@ export default function LoginScreen() {
       router.replace("/(tabs)");
     } catch (err: any) {
       console.error("Auth error:", err);
+      const errorMsg = err.message?.toLowerCase() || "";
       
-      // Handle specific error cases
-      if (err.message === "NO_ACCOUNT" || err.message?.includes("NO_ACCOUNT")) {
-        setError("No account found with this email. Please sign up first.");
-        // Auto-switch to registration mode after a brief delay
-        setTimeout(() => {
-          setIsRegistering(true);
-          setError(null);
-        }, 2000);
+      // Handle "no account" error - auto-switch to registration
+      if (
+        errorMsg.includes("no account") ||
+        errorMsg.includes("no_account") ||
+        errorMsg.includes("not found") ||
+        err.data?.code === "NOT_FOUND"
+      ) {
+        setIsRegistering(true);
+        setError("No account found. Please create one below.");
+        return;
+      }
+      
+      // Handle "already exists" error - auto-switch to login
+      if (errorMsg.includes("already exists")) {
+        setIsRegistering(false);
+        setError("Account already exists. Please sign in.");
+        return;
+      }
+      
+      // Handle incorrect password
+      if (errorMsg.includes("incorrect password")) {
+        setError("Incorrect password. Please try again.");
         return;
       }
       
