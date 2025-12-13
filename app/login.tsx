@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,39 +10,42 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  StatusBar,
   Pressable,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { Mail, Lock, User, Eye, EyeOff } from "lucide-react-native";
+import { Mail, Lock, User, Eye, EyeOff, ArrowRight, AlertCircle } from "lucide-react-native";
 import * as Google from "expo-auth-session/providers/google";
 import * as WebBrowser from "expo-web-browser";
 
-import { typography } from "@/constants/typography";
 import { useApp } from "@/context/AppContext";
 import { useTheme } from "@/hooks/useTheme";
 import { trpc } from "@/lib/trpc";
 
 WebBrowser.maybeCompleteAuthSession();
 
-type AuthMode = "login" | "register";
+// Unused import removed
 
 export default function LoginScreen() {
   const router = useRouter();
   const { login } = useApp();
   const { theme } = useTheme();
   
-  const [mode, setMode] = useState<AuthMode>("login");
+  const [isRegistering, setIsRegistering] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-
+  
+  // Status states
+  const [formError, setFormError] = useState<string | null>(null);
+  
   const registerMutation = trpc.auth.register.useMutation();
   const loginMutation = trpc.auth.login.useMutation();
   const googleAuthMutation = trpc.auth.googleAuth.useMutation();
+  
+  const isLoading = registerMutation.isPending || loginMutation.isPending || googleAuthMutation.isPending;
 
   const [, response, promptAsync] = Google.useAuthRequest({
     clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
@@ -50,28 +53,26 @@ export default function LoginScreen() {
 
   const handleGoogleAuthResponse = React.useCallback(async (idToken: string) => {
     try {
-      const decoded = JSON.parse(
-        atob(idToken.split(".")[1])
-      );
+      setFormError(null);
+      // Basic decoding to get user info for optimistic UI or logs
+      const parts = idToken.split(".");
+      const payload = JSON.parse(atob(parts[1]));
       
       const result = await googleAuthMutation.mutateAsync({
         idToken,
-        email: decoded.email,
-        name: decoded.name,
+        email: payload.email,
+        name: payload.name || payload.email.split("@")[0],
       });
       
-      console.log("Google auth successful:", result.user.email);
       login(result.user as any, result.sessionToken);
       router.replace("/(tabs)");
     } catch (error: any) {
       console.error("Google auth error:", error);
-      Alert.alert("Error", error.message || "Google authentication failed");
-    } finally {
-      setLoading(false);
+      setFormError(error.message || "Failed to sign in with Google.");
     }
   }, [googleAuthMutation, login, router]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (response?.type === "success") {
       const { authentication } = response;
       if (authentication?.idToken) {
@@ -80,76 +81,58 @@ export default function LoginScreen() {
     }
   }, [response, handleGoogleAuthResponse]);
 
-  const handleEmailAuth = async () => {
-    if (!email || !password) {
-      Alert.alert("Error", "Please fill in all fields");
-      return;
+  const validateForm = () => {
+    setFormError(null);
+    
+    if (!email.trim() || !password) {
+      setFormError("Please fill in all required fields.");
+      return false;
     }
-
-    if (mode === "register" && !name) {
-      Alert.alert("Error", "Please enter your name");
-      return;
+    
+    if (isRegistering && !name.trim()) {
+      setFormError("Please enter your name.");
+      return false;
     }
-
-    if (password.length < 8) {
-      Alert.alert("Error", "Password must be at least 8 characters");
-      return;
-    }
-
+    
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      Alert.alert("Error", "Please enter a valid email address");
-      return;
+    if (!emailRegex.test(email.trim())) {
+      setFormError("Please enter a valid email address.");
+      return false;
     }
+    
+    if (password.length < 8) {
+      setFormError("Password must be at least 8 characters long.");
+      return false;
+    }
+    
+    return true;
+  };
 
-    setLoading(true);
+  const handleSubmit = async () => {
+    if (!validateForm()) return;
 
     try {
-      if (mode === "register") {
+      if (isRegistering) {
         const result = await registerMutation.mutateAsync({
-          email,
+          email: email.trim(),
           password,
-          name,
+          name: name.trim(),
         });
-        console.log("Registration successful:", result.user.email);
         login(result.user as any, result.sessionToken);
-        router.replace("/(tabs)");
       } else {
         const result = await loginMutation.mutateAsync({
-          email,
+          email: email.trim(),
           password,
         });
-        console.log("Login successful:", result.user.email);
         login(result.user as any, result.sessionToken);
-        router.replace("/(tabs)");
       }
+      
+      // Navigate after successful login
+      router.replace("/(tabs)");
     } catch (error: any) {
       console.error("Auth error:", error);
-      Alert.alert("Error", error.message || "Authentication failed");
-    } finally {
-      setLoading(false);
+      setFormError(error.message || "Authentication failed. Please try again.");
     }
-  };
-
-  const handleGoogleAuth = async () => {
-    setLoading(true);
-    try {
-      await promptAsync();
-    } catch (error) {
-      console.error("Google auth error:", error);
-      Alert.alert("Error", "Failed to sign in with Google");
-      setLoading(false);
-    }
-  };
-
-
-
-  const handleForgotPassword = () => {
-    Alert.alert(
-      "Reset Password",
-      "A password reset link has been sent to your email (test mode)",
-      [{ text: "OK" }]
-    );
   };
 
   return (
@@ -158,152 +141,185 @@ export default function LoginScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.background }]} />
+      <StatusBar barStyle={theme.background === "#0B1020" ? "light-content" : "dark-content"} />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
-          <View style={styles.logoContainer}>
-            <LinearGradient
-              colors={[theme.primary, theme.accent]}
-              style={styles.logo}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Text style={styles.logoText}>JP</Text>
-            </LinearGradient>
-          </View>
-          <Text style={[styles.title, { color: theme.text }]}>
-            {mode === "login" ? "Welcome back" : "Create Account"}
+        <View style={styles.headerContainer}>
+          <LinearGradient
+            colors={[theme.primary, theme.accent]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.logoBadge}
+          >
+            <Text style={styles.logoText}>JP</Text>
+          </LinearGradient>
+          
+          <Text style={[styles.welcomeText, { color: theme.text }]}>
+            {isRegistering ? "Create Account" : "Welcome Back"}
           </Text>
-          <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-            {mode === "login"
-              ? "Sign in to continue your job search"
-              : "Start your journey to your dream job"}
+          <Text style={[styles.subtitleText, { color: theme.textSecondary }]}>
+            {isRegistering 
+              ? "Sign up to start your career journey" 
+              : "Sign in to access your applications"}
           </Text>
         </View>
 
-        <View style={styles.form}>
-          {mode === "register" && (
-            <View style={[styles.inputContainer, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <User size={20} color={theme.textSecondary} style={styles.inputIcon} />
-              <TextInput
-                style={[styles.input, { color: theme.text }]}
-                placeholder="Full Name"
-                placeholderTextColor={theme.textSecondary}
-                value={name}
-                onChangeText={setName}
-                autoCapitalize="words"
-              />
+        {/* Tab Switcher */}
+        <View style={[styles.tabContainer, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Pressable
+            style={[styles.tab, !isRegistering && { backgroundColor: theme.primary + '15' }]}
+            onPress={() => {
+              setIsRegistering(false);
+              setFormError(null);
+            }}
+          >
+            <Text style={[
+              styles.tabText, 
+              { color: !isRegistering ? theme.primary : theme.textSecondary, fontWeight: !isRegistering ? "700" : "500" }
+            ]}>
+              Sign In
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.tab, isRegistering && { backgroundColor: theme.primary + '15' }]}
+            onPress={() => {
+              setIsRegistering(true);
+              setFormError(null);
+            }}
+          >
+            <Text style={[
+              styles.tabText, 
+              { color: isRegistering ? theme.primary : theme.textSecondary, fontWeight: isRegistering ? "700" : "500" }
+            ]}>
+              Sign Up
+            </Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.formContainer}>
+          {formError && (
+            <View style={[styles.errorContainer, { backgroundColor: theme.error + '15', borderColor: theme.error }]}>
+              <AlertCircle size={20} color={theme.error} />
+              <Text style={[styles.errorText, { color: theme.error }]}>{formError}</Text>
             </View>
           )}
 
-          <View style={[styles.inputContainer, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Mail size={20} color={theme.textSecondary} style={styles.inputIcon} />
-            <TextInput
-              style={[styles.input, { color: theme.text }]}
-              placeholder="Email"
-              placeholderTextColor={theme.textSecondary}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
+          {isRegistering && (
+            <View style={styles.inputGroup}>
+              <Text style={[styles.label, { color: theme.textSecondary }]}>Full Name</Text>
+              <View style={[styles.inputWrapper, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <User size={20} color={theme.textSecondary} style={styles.inputIcon} />
+                <TextInput
+                  style={[styles.input, { color: theme.text }]}
+                  placeholder="John Doe"
+                  placeholderTextColor={theme.textSecondary + '80'}
+                  value={name}
+                  onChangeText={setName}
+                  autoCapitalize="words"
+                />
+              </View>
+            </View>
+          )}
+
+          <View style={styles.inputGroup}>
+            <Text style={[styles.label, { color: theme.textSecondary }]}>Email Address</Text>
+            <View style={[styles.inputWrapper, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Mail size={20} color={theme.textSecondary} style={styles.inputIcon} />
+              <TextInput
+                style={[styles.input, { color: theme.text }]}
+                placeholder="you@example.com"
+                placeholderTextColor={theme.textSecondary + '80'}
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
           </View>
 
-          <View style={[styles.inputContainer, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Lock size={20} color={theme.textSecondary} style={styles.inputIcon} />
-            <TextInput
-              style={[styles.input, { color: theme.text }]}
-              placeholder="Password"
-              placeholderTextColor={theme.textSecondary}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-            />
-            <TouchableOpacity
-              style={styles.eyeIcon}
-              onPress={() => setShowPassword(!showPassword)}
-            >
-              {showPassword ? (
-                <EyeOff size={20} color={theme.textSecondary} />
-              ) : (
-                <Eye size={20} color={theme.textSecondary} />
-              )}
-            </TouchableOpacity>
-          </View>
-
-          {mode === "login" && (
-            <View style={styles.optionsRow}>
-              <Pressable
-                style={styles.rememberMe}
-                onPress={() => setRememberMe(!rememberMe)}
-              >
-                <View
-                  style={[
-                    styles.checkbox,
-                    { borderColor: theme.border },
-                    rememberMe && { backgroundColor: theme.primary, borderColor: theme.primary },
-                  ]}
-                >
-                  {rememberMe && <Text style={styles.checkmark}>✓</Text>}
-                </View>
-                <Text style={[styles.rememberText, { color: theme.textSecondary }]}>Remember me</Text>
-              </Pressable>
-
-              <TouchableOpacity onPress={handleForgotPassword}>
-                <Text style={[styles.forgotText, { color: theme.primary }]}>Forgot password?</Text>
+          <View style={styles.inputGroup}>
+            <Text style={[styles.label, { color: theme.textSecondary }]}>Password</Text>
+            <View style={[styles.inputWrapper, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Lock size={20} color={theme.textSecondary} style={styles.inputIcon} />
+              <TextInput
+                style={[styles.input, { color: theme.text }]}
+                placeholder="••••••••"
+                placeholderTextColor={theme.textSecondary + '80'}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+              />
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
+                {showPassword ? (
+                  <EyeOff size={20} color={theme.textSecondary} />
+                ) : (
+                  <Eye size={20} color={theme.textSecondary} />
+                )}
               </TouchableOpacity>
             </View>
+          </View>
+
+          {!isRegistering && (
+            <TouchableOpacity 
+              style={styles.forgotPassword}
+              onPress={() => Alert.alert("Reset Password", "Password reset instructions sent to your email.")}
+            >
+              <Text style={[styles.forgotPasswordText, { color: theme.primary }]}>Forgot Password?</Text>
+            </TouchableOpacity>
           )}
 
           <TouchableOpacity
-            style={[styles.primaryButton, { backgroundColor: theme.primary }]}
-            onPress={handleEmailAuth}
-            disabled={loading}
+            style={[styles.submitButton, { backgroundColor: theme.primary, opacity: isLoading ? 0.7 : 1 }]}
+            onPress={handleSubmit}
+            disabled={isLoading}
           >
-            {loading ? (
+            {isLoading ? (
               <ActivityIndicator color="white" />
             ) : (
-              <Text style={styles.primaryButtonText}>
-                {mode === "login" ? "Sign In" : "Create Account"}
-              </Text>
+              <View style={styles.submitContent}>
+                <Text style={styles.submitButtonText}>
+                  {isRegistering ? "Create Account" : "Sign In"}
+                </Text>
+                <ArrowRight size={20} color="white" style={{ marginLeft: 8 }} />
+              </View>
             )}
           </TouchableOpacity>
 
           <View style={styles.divider}>
-            <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
-            <Text style={[styles.dividerText, { color: theme.textSecondary }]}>or</Text>
-            <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+            <View style={[styles.line, { backgroundColor: theme.border }]} />
+            <Text style={[styles.dividerText, { color: theme.textSecondary }]}>Or continue with</Text>
+            <View style={[styles.line, { backgroundColor: theme.border }]} />
           </View>
 
           <TouchableOpacity
-            style={[styles.googleButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
-            onPress={handleGoogleAuth}
-            disabled={loading}
+            style={[styles.socialButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+            onPress={() => promptAsync()}
+            disabled={isLoading}
           >
-            <Text style={[styles.googleIcon, { color: theme.primary }]}>G</Text>
-            <Text style={[styles.googleButtonText, { color: theme.text }]}>Continue with Google</Text>
+            <View style={styles.socialIconPlaceholder}>
+              <Text style={{ fontSize: 18, fontWeight: 'bold', color: theme.text }}>G</Text>
+            </View>
+            <Text style={[styles.socialButtonText, { color: theme.text }]}>Google</Text>
           </TouchableOpacity>
+        </View>
 
-          <View style={styles.switchMode}>
-            <Text style={[styles.switchModeText, { color: theme.textSecondary }]}>
-              {mode === "login"
-                ? "Don't have an account? "
-                : "Already have an account? "}
-            </Text>
-            <TouchableOpacity
-              onPress={() => setMode(mode === "login" ? "register" : "login")}
-            >
-              <Text style={[styles.switchModeLink, { color: theme.primary }]}>
-                {mode === "login" ? "Sign Up" : "Sign In"}
-              </Text>
-            </TouchableOpacity>
-          </View>
+        <View style={styles.footer}>
+          <Text style={[styles.footerText, { color: theme.textSecondary }]}>
+            By continuing, you agree to our{" "}
+          </Text>
+          <TouchableOpacity>
+            <Text style={[styles.footerLink, { color: theme.primary }]}>Terms</Text>
+          </TouchableOpacity>
+          <Text style={[styles.footerText, { color: theme.textSecondary }]}> and </Text>
+          <TouchableOpacity>
+            <Text style={[styles.footerLink, { color: theme.primary }]}>Privacy Policy</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -316,52 +332,90 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24,
+    padding: 24,
     paddingTop: 60,
-    paddingBottom: 40,
   },
-  header: {
+  headerContainer: {
     alignItems: "center",
-    marginBottom: 40,
+    marginBottom: 32,
   },
-  logoContainer: {
-    marginBottom: 24,
-  },
-  logo: {
-    width: 80,
-    height: 80,
+  logoBadge: {
+    width: 64,
+    height: 64,
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
+    marginBottom: 20,
     shadowColor: "#0B6EFD",
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
     elevation: 8,
   },
   logoText: {
     color: "white",
-    fontSize: 32,
-    fontWeight: "700",
+    fontSize: 24,
+    fontWeight: "800",
   },
-  title: {
-    ...typography.h1,
+  welcomeText: {
+    fontSize: 28,
+    fontWeight: "700",
     marginBottom: 8,
     textAlign: "center",
   },
-  subtitle: {
-    ...typography.body,
+  subtitleText: {
+    fontSize: 16,
     textAlign: "center",
+    maxWidth: '80%',
   },
-  form: {
+  tabContainer: {
+    flexDirection: "row",
+    borderRadius: 16,
+    padding: 4,
+    borderWidth: 1,
+    marginBottom: 24,
+    height: 50,
+  },
+  tab: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 12,
+  },
+  tabText: {
+    fontSize: 16,
+  },
+  formContainer: {
     width: "100%",
   },
-  inputContainer: {
+  errorContainer: {
     flexDirection: "row",
     alignItems: "center",
+    padding: 12,
     borderRadius: 12,
     borderWidth: 1,
-    marginBottom: 16,
+    marginBottom: 20,
+  },
+  errorText: {
+    marginLeft: 8,
+    fontSize: 14,
+    flex: 1,
+  },
+  inputGroup: {
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  inputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: 16,
+    height: 56,
     paddingHorizontal: 16,
   },
   inputIcon: {
@@ -370,65 +424,47 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 16,
-    paddingVertical: 16,
+    height: "100%",
   },
   eyeIcon: {
     padding: 8,
   },
-  optionsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+  forgotPassword: {
+    alignSelf: "flex-end",
     marginBottom: 24,
+    marginTop: -8,
   },
-  rememberMe: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    borderWidth: 2,
-    marginRight: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  checkmark: {
-    color: "white",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  rememberText: {
-    fontSize: 14,
-  },
-  forgotText: {
+  forgotPasswordText: {
     fontSize: 14,
     fontWeight: "600",
   },
-  primaryButton: {
-    borderRadius: 12,
-    marginBottom: 20,
-    paddingVertical: 16,
+  submitButton: {
+    height: 56,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#0B6EFD",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowRadius: 8,
+    elevation: 4,
+    marginBottom: 24,
   },
-  primaryButtonText: {
+  submitContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  submitButtonText: {
     color: "white",
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "700",
   },
   divider: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 24,
   },
-  dividerLine: {
+  line: {
     flex: 1,
     height: 1,
   },
@@ -436,39 +472,34 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     fontSize: 14,
   },
-  googleButton: {
+  socialButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 12,
+    height: 56,
+    borderRadius: 16,
     borderWidth: 1,
-    paddingVertical: 16,
-    marginBottom: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    marginBottom: 32,
   },
-  googleIcon: {
-    fontSize: 20,
-    fontWeight: "700",
+  socialIconPlaceholder: {
     marginRight: 12,
   },
-  googleButtonText: {
+  socialButtonText: {
     fontSize: 16,
     fontWeight: "600",
   },
-  switchMode: {
+  footer: {
     flexDirection: "row",
+    flexWrap: "wrap",
     justifyContent: "center",
-    alignItems: "center",
+    marginTop: "auto",
   },
-  switchModeText: {
-    fontSize: 14,
+  footerText: {
+    fontSize: 12,
+    textAlign: "center",
   },
-  switchModeLink: {
-    fontSize: 14,
+  footerLink: {
+    fontSize: 12,
     fontWeight: "700",
   },
 });

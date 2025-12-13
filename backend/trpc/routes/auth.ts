@@ -3,6 +3,9 @@ import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, publicProcedure } from "../create-context";
 import { db } from "@/backend/db";
 
+// Redefining interfaces locally to ensure they match exact usage here if not strictly shared
+// But good practice is to use shared types. I'll define them here for safety and self-containment as per previous file.
+
 interface UserData {
   id: string;
   email: string;
@@ -24,7 +27,14 @@ interface SessionData {
   expiresAt: string;
 }
 
+interface EmailMapping {
+  id: string;
+  userId: string;
+}
+
 function hashPassword(password: string): string {
+  // Simple base64 for demo purposes as seen in previous code. 
+  // In production, use bcrypt/argon2.
   return Buffer.from(password).toString("base64");
 }
 
@@ -50,20 +60,23 @@ export const authRouter = createTRPCRouter({
     .mutation(async ({ input }) => {
       console.log("Register attempt:", input.email);
       
-      const emailKey = sanitizeEmail(input.email);
-      const existingUser = await db.get<UserData>("users", emailKey);
+      const emailRaw = sanitizeEmail(input.email);
       
-      if (existingUser) {
+      // 1. Check if email exists using direct lookup
+      const existingMapping = await db.get<EmailMapping>("user_emails", emailRaw);
+      
+      if (existingMapping) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "An account with this email already exists",
         });
       }
 
-      const userId = `user_${Date.now()}`;
+      const userId = `user_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      
       const user: UserData = {
         id: userId,
-        email: input.email.toLowerCase(),
+        email: emailRaw,
         passwordHash: hashPassword(input.password),
         name: input.name,
         subscription: "free",
@@ -84,8 +97,13 @@ export const authRouter = createTRPCRouter({
         },
       };
 
-      await db.set("users", emailKey, user);
+      // 2. Save user data
+      await db.set("users", userId, user);
+      
+      // 3. Save email mapping
+      await db.set("user_emails", emailRaw, { id: emailRaw, userId });
 
+      // 4. Create session
       const sessionToken = generateSessionToken();
       const session: SessionData = {
         id: sessionToken,
@@ -116,13 +134,41 @@ export const authRouter = createTRPCRouter({
     .mutation(async ({ input }) => {
       console.log("Login attempt:", input.email);
       
-      const emailKey = sanitizeEmail(input.email);
-      const user = await db.get<UserData>("users", emailKey);
+      const emailRaw = sanitizeEmail(input.email);
       
-      if (!user) {
+      // 1. Lookup userId from email
+      let mapping = await db.get<EmailMapping>("user_emails", emailRaw);
+      let userId = mapping?.userId;
+      
+      // Fallback: If no mapping, try to find in existing users list (migration for old accounts)
+      if (!userId) {
+        console.log("No email mapping found, scanning users list (fallback)...");
+        const users = await db.list<UserData>("users");
+        const foundUser = users.find(u => u.email?.toLowerCase() === emailRaw);
+        
+        if (foundUser) {
+           userId = foundUser.id;
+           // Create the mapping for next time so login is fast
+           await db.set("user_emails", emailRaw, { id: emailRaw, userId });
+           console.log("Recovered user from list scan:", emailRaw);
+        }
+      }
+      
+      if (!userId) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "No account found with this email address. Please register first.",
+        });
+      }
+
+      // 2. Fetch user data
+      const user = await db.get<UserData>("users", userId);
+      
+      if (!user) {
+         // Should not happen if data is consistent, but handle it
+         throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "User data corrupted or missing",
         });
       }
 
@@ -164,15 +210,24 @@ export const authRouter = createTRPCRouter({
     .mutation(async ({ input }) => {
       console.log("Google auth:", input.email);
       
-      const emailKey = sanitizeEmail(input.email);
-      let user = await db.get<UserData>("users", emailKey);
+      const emailRaw = sanitizeEmail(input.email);
       
+      // Check if user exists
+      const mapping = await db.get<EmailMapping>("user_emails", emailRaw);
+      let userId = mapping?.userId;
+      let user: UserData | null = null;
+
+      if (userId) {
+        user = await db.get<UserData>("users", userId);
+      }
+
       if (!user) {
-        const userId = `user_${Date.now()}`;
+        // Create new user
+        userId = `user_${Date.now()}_${Math.random().toString(36).substring(7)}`;
         user = {
           id: userId,
-          email: input.email.toLowerCase(),
-          passwordHash: "",
+          email: emailRaw,
+          passwordHash: "", // No password for google auth
           name: input.name,
           subscription: "free",
           createdAt: new Date().toISOString(),
@@ -191,7 +246,9 @@ export const authRouter = createTRPCRouter({
             language: "en",
           },
         };
-        await db.set("users", emailKey, user);
+        
+        await db.set("users", userId, user);
+        await db.set("user_emails", emailRaw, { id: emailRaw, userId });
       }
 
       const sessionToken = generateSessionToken();
@@ -228,8 +285,8 @@ export const authRouter = createTRPCRouter({
         });
       }
 
-      const users = await db.list<UserData>("users");
-      const user = users.find(u => u.id === session.userId);
+      // Direct lookup by ID - MUCH faster/reliable than listing all users
+      const user = await db.get<UserData>("users", session.userId);
       
       if (!user) {
         throw new TRPCError({
@@ -271,8 +328,7 @@ export const authRouter = createTRPCRouter({
         });
       }
 
-      const users = await db.list<UserData>("users");
-      const user = users.find(u => u.id === session.userId);
+      const user = await db.get<UserData>("users", session.userId);
       
       if (!user) {
         throw new TRPCError({
@@ -287,8 +343,7 @@ export const authRouter = createTRPCRouter({
       }
       if (input.updates.subscription) user.subscription = input.updates.subscription;
 
-      const emailKey = sanitizeEmail(user.email);
-      await db.set("users", emailKey, user);
+      await db.set("users", user.id, user);
 
       return {
         id: user.id,
@@ -314,8 +369,7 @@ export const authRouter = createTRPCRouter({
         });
       }
 
-      const users = await db.list<UserData>("users");
-      const user = users.find(u => u.id === session.userId);
+      const user = await db.get<UserData>("users", session.userId);
       
       if (!user) {
         throw new TRPCError({
@@ -326,15 +380,14 @@ export const authRouter = createTRPCRouter({
 
       if (!user.resumes) user.resumes = [];
       
-      const existingIndex = user.resumes.findIndex(r => r.id === input.resume.id);
+      const existingIndex = user.resumes.findIndex((r: any) => r.id === input.resume.id);
       if (existingIndex >= 0) {
         user.resumes[existingIndex] = input.resume;
       } else {
         user.resumes.push(input.resume);
       }
 
-      const emailKey = sanitizeEmail(user.email);
-      await db.set("users", emailKey, user);
+      await db.set("users", user.id, user);
 
       return { success: true };
     }),
@@ -354,8 +407,7 @@ export const authRouter = createTRPCRouter({
         });
       }
 
-      const users = await db.list<UserData>("users");
-      const user = users.find(u => u.id === session.userId);
+      const user = await db.get<UserData>("users", session.userId);
       
       if (!user) {
         throw new TRPCError({
@@ -364,10 +416,9 @@ export const authRouter = createTRPCRouter({
         });
       }
 
-      user.resumes = (user.resumes || []).filter(r => r.id !== input.resumeId);
+      user.resumes = (user.resumes || []).filter((r: any) => r.id !== input.resumeId);
       
-      const emailKey = sanitizeEmail(user.email);
-      await db.set("users", emailKey, user);
+      await db.set("users", user.id, user);
 
       return { success: true };
     }),
@@ -387,8 +438,7 @@ export const authRouter = createTRPCRouter({
         });
       }
 
-      const users = await db.list<UserData>("users");
-      const user = users.find(u => u.id === session.userId);
+      const user = await db.get<UserData>("users", session.userId);
       
       if (!user) {
         throw new TRPCError({
@@ -399,15 +449,14 @@ export const authRouter = createTRPCRouter({
 
       if (!user.jobs) user.jobs = [];
 
-      const existingIndex = user.jobs.findIndex(j => j.id === input.job.id);
+      const existingIndex = user.jobs.findIndex((j: any) => j.id === input.job.id);
       if (existingIndex >= 0) {
         user.jobs[existingIndex] = input.job;
       } else {
         user.jobs.push(input.job);
       }
 
-      const emailKey = sanitizeEmail(user.email);
-      await db.set("users", emailKey, user);
+      await db.set("users", user.id, user);
 
       return { success: true };
     }),
@@ -427,8 +476,7 @@ export const authRouter = createTRPCRouter({
         });
       }
 
-      const users = await db.list<UserData>("users");
-      const user = users.find(u => u.id === session.userId);
+      const user = await db.get<UserData>("users", session.userId);
       
       if (!user) {
         throw new TRPCError({
@@ -437,10 +485,9 @@ export const authRouter = createTRPCRouter({
         });
       }
 
-      user.jobs = (user.jobs || []).filter(j => j.id !== input.jobId);
+      user.jobs = (user.jobs || []).filter((j: any) => j.id !== input.jobId);
       
-      const emailKey = sanitizeEmail(user.email);
-      await db.set("users", emailKey, user);
+      await db.set("users", user.id, user);
 
       return { success: true };
     }),
