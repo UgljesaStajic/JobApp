@@ -40,7 +40,7 @@ export default function ResumesScreen() {
   const filteredResumes = state.resumes.filter(
     (resume) =>
       resume.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      resume.tags.some((tag) =>
+      resume.tags.some((tag: string) =>
         tag.toLowerCase().includes(searchQuery.toLowerCase())
       )
   );
@@ -194,7 +194,7 @@ export default function ResumesScreen() {
 
                   {resume.tags.length > 0 && (
                     <View style={styles.tagsContainer}>
-                      {resume.tags.slice(0, 3).map((tag, index) => (
+                      {resume.tags.slice(0, 3).map((tag: string, index: number) => (
                         <View
                           key={index}
                           style={[

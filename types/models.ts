@@ -1,9 +1,10 @@
+export type ApplicationStatus = 'saved' | 'applied' | 'interview' | 'offer' | 'rejected';
+
 export interface Resume {
   id: string;
   title: string;
-  content: string;
   tags: string[];
-  jobId?: string;
+  content: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -12,42 +13,48 @@ export interface Job {
   id: string;
   title: string;
   company: string;
-  url?: string;
   description: string;
+
   parsedKeywords: string[];
   mustHaveSkills: string[];
   niceToHave: string[];
   responsibilities: string[];
+
   matchScore: number;
   matchExplanation: string;
+
   createdAt: Date;
+
+  location?: string;
+  url?: string;
 }
 
 export interface Application {
   id: string;
   jobId: string;
-  resumeId: string;
-  coverLetterId?: string;
-  status: "draft" | "applied" | "interview" | "offer" | "rejected";
-  appliedAt?: Date;
-  notes: string;
+  status: ApplicationStatus;
+  notes?: string;
   createdAt: Date;
+  appliedAt?: Date;
 }
+
+export type CoverLetterTone = 'professional' | 'friendly' | 'confident' | 'concise' | 'creative';
+export type CoverLetterLength = 'short' | 'standard' | 'medium' | 'long';
 
 export interface CoverLetter {
   id: string;
   jobId: string;
   content: string;
-  tone: "professional" | "friendly" | "confident" | "creative";
-  length: "short" | "standard" | "long";
+  tone: CoverLetterTone;
+  length: CoverLetterLength;
   createdAt: Date;
 }
 
 export interface InterviewSession {
   id: string;
-  jobId?: string;
+  jobId: string;
   question: string;
-  recordingUri?: string;
+  recordingUri: string;
   transcript: string;
   score: number;
   feedback: string;

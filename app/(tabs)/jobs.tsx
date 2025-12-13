@@ -261,7 +261,7 @@ export default function JobsScreen() {
                     </Text>
 
                     <View style={styles.skillsContainer}>
-                      {job.mustHaveSkills.slice(0, 3).map((skill, index) => (
+                      {job.mustHaveSkills.slice(0, 3).map((skill: string, index: number) => (
                         <View
                           key={index}
                           style={[
