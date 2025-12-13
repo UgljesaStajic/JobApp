@@ -1,6 +1,7 @@
 import * as z from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, publicProcedure } from "../create-context";
+import { db } from "@/backend/db";
 
 // Types
 interface UserData {
@@ -25,10 +26,10 @@ interface SessionData {
   expiresAt: string;
 }
 
-// In-memory storage (replace with proper database when available)
-const users = new Map<string, UserData>();
-const userEmails = new Map<string, string>(); // email -> userId
-const sessions = new Map<string, SessionData>();
+interface EmailMapping {
+  id: string; // The email itself
+  userId: string;
+}
 
 // Helpers
 function hashPassword(password: string): string {
@@ -81,7 +82,8 @@ export const authRouter = createTRPCRouter({
       const emailRaw = sanitizeEmail(input.email);
 
       // 1. Check if email exists
-      if (userEmails.has(emailRaw)) {
+      const existingMapping = await db.get<EmailMapping>("user_emails", emailRaw);
+      if (existingMapping) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "An account with this email already exists",
@@ -93,8 +95,9 @@ export const authRouter = createTRPCRouter({
       const user = createDefaultUser(userId, emailRaw, input.name, hashPassword(input.password));
 
       // 3. Save User & Mapping
-      users.set(userId, user);
-      userEmails.set(emailRaw, userId);
+      // We do this sequentially to ensure consistency
+      await db.set("users", userId, user);
+      await db.set("user_emails", emailRaw, { id: emailRaw, userId });
 
       // 4. Create Session
       const sessionToken = generateId("sess");
@@ -103,7 +106,7 @@ export const authRouter = createTRPCRouter({
         userId,
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       };
-      sessions.set(sessionToken, session);
+      await db.set("sessions", sessionToken, session);
 
       console.log(`[Auth] Registered successfully: ${userId}`);
 
@@ -129,8 +132,9 @@ export const authRouter = createTRPCRouter({
       const emailRaw = sanitizeEmail(input.email);
 
       // 1. Find User ID
-      const userId = userEmails.get(emailRaw);
-      if (!userId) {
+      const mapping = await db.get<EmailMapping>("user_emails", emailRaw);
+      if (!mapping) {
+        // Obscure error for security, or be explicit for UX. Being explicit here as per request.
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "No account found with this email address.",
@@ -138,7 +142,7 @@ export const authRouter = createTRPCRouter({
       }
 
       // 2. Get User
-      const user = users.get(userId);
+      const user = await db.get<UserData>("users", mapping.userId);
       if (!user) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
@@ -161,7 +165,7 @@ export const authRouter = createTRPCRouter({
         userId: user.id,
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       };
-      sessions.set(sessionToken, session);
+      await db.set("sessions", sessionToken, session);
 
       console.log(`[Auth] Login successful: ${user.id}`);
 
@@ -188,19 +192,19 @@ export const authRouter = createTRPCRouter({
       const emailRaw = sanitizeEmail(input.email);
 
       // 1. Find or Create User
-      let userId = userEmails.get(emailRaw);
+      let mapping = await db.get<EmailMapping>("user_emails", emailRaw);
       let user: UserData | null = null;
 
-      if (userId) {
-        user = users.get(userId) || null;
+      if (mapping) {
+        user = await db.get<UserData>("users", mapping.userId);
       }
 
       if (!user) {
-        userId = generateId("user");
+        const userId = generateId("user");
         user = createDefaultUser(userId, emailRaw, input.name, "");
         
-        users.set(userId, user);
-        userEmails.set(emailRaw, userId);
+        await db.set("users", userId, user);
+        await db.set("user_emails", emailRaw, { id: emailRaw, userId });
       }
 
       // 2. Create Session
@@ -210,7 +214,7 @@ export const authRouter = createTRPCRouter({
         userId: user.id,
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       };
-      sessions.set(sessionToken, session);
+      await db.set("sessions", sessionToken, session);
 
       return {
         sessionToken,
@@ -229,13 +233,13 @@ export const authRouter = createTRPCRouter({
       sessionToken: z.string(),
     }))
     .query(async ({ input }) => {
-      const session = sessions.get(input.sessionToken);
+      const session = await db.get<SessionData>("sessions", input.sessionToken);
       
       if (!session || new Date(session.expiresAt) < new Date()) {
         throw new TRPCError({ code: "UNAUTHORIZED", message: "Session expired" });
       }
 
-      const user = users.get(session.userId);
+      const user = await db.get<UserData>("users", session.userId);
       if (!user) {
         throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
       }
@@ -259,7 +263,7 @@ export const authRouter = createTRPCRouter({
       sessionToken: z.string(),
     }))
     .mutation(async ({ input }) => {
-      sessions.delete(input.sessionToken);
+      await db.delete("sessions", input.sessionToken);
       return { success: true };
     }),
 });
