@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, publicProcedure } from "../create-context";
 
 const users = new Map<string, {
@@ -41,7 +42,10 @@ export const authRouter = createTRPCRouter({
       console.log("Register attempt:", input.email);
       
       if (users.has(input.email)) {
-        throw new Error("User already exists");
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "An account with this email already exists",
+        });
       }
 
       const userId = `user_${Date.now()}`;
@@ -100,11 +104,17 @@ export const authRouter = createTRPCRouter({
       
       const user = users.get(input.email);
       if (!user) {
-        throw new Error("No account found with this email address");
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "No account found with this email address",
+        });
       }
 
       if (!verifyPassword(input.password, user.passwordHash)) {
-        throw new Error("Password incorrect. Please try again.");
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Password incorrect. Please try again.",
+        });
       }
 
       const sessionToken = generateSessionToken();
@@ -190,12 +200,18 @@ export const authRouter = createTRPCRouter({
     .query(({ input }) => {
       const session = sessions.get(input.sessionToken);
       if (!session || session.expiresAt < new Date()) {
-        throw new Error("Invalid or expired session");
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Invalid or expired session",
+        });
       }
 
       const user = Array.from(users.values()).find(u => u.id === session.userId);
       if (!user) {
-        throw new Error("User not found");
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "User not found",
+        });
       }
 
       return {
@@ -224,12 +240,18 @@ export const authRouter = createTRPCRouter({
     .mutation(({ input }) => {
       const session = sessions.get(input.sessionToken);
       if (!session || session.expiresAt < new Date()) {
-        throw new Error("Invalid or expired session");
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Invalid or expired session",
+        });
       }
 
       const user = Array.from(users.values()).find(u => u.id === session.userId);
       if (!user) {
-        throw new Error("User not found");
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "User not found",
+        });
       }
 
       if (input.updates.name) user.name = input.updates.name;
@@ -255,12 +277,18 @@ export const authRouter = createTRPCRouter({
     .mutation(({ input }) => {
       const session = sessions.get(input.sessionToken);
       if (!session || session.expiresAt < new Date()) {
-        throw new Error("Invalid or expired session");
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Invalid or expired session",
+        });
       }
 
       const user = Array.from(users.values()).find(u => u.id === session.userId);
       if (!user) {
-        throw new Error("User not found");
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "User not found",
+        });
       }
 
       const existingIndex = user.resumes.findIndex(r => r.id === input.resume.id);
@@ -281,12 +309,18 @@ export const authRouter = createTRPCRouter({
     .mutation(({ input }) => {
       const session = sessions.get(input.sessionToken);
       if (!session || session.expiresAt < new Date()) {
-        throw new Error("Invalid or expired session");
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Invalid or expired session",
+        });
       }
 
       const user = Array.from(users.values()).find(u => u.id === session.userId);
       if (!user) {
-        throw new Error("User not found");
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "User not found",
+        });
       }
 
       user.resumes = user.resumes.filter(r => r.id !== input.resumeId);
@@ -301,12 +335,18 @@ export const authRouter = createTRPCRouter({
     .mutation(({ input }) => {
       const session = sessions.get(input.sessionToken);
       if (!session || session.expiresAt < new Date()) {
-        throw new Error("Invalid or expired session");
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Invalid or expired session",
+        });
       }
 
       const user = Array.from(users.values()).find(u => u.id === session.userId);
       if (!user) {
-        throw new Error("User not found");
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "User not found",
+        });
       }
 
       const existingIndex = user.jobs.findIndex(j => j.id === input.job.id);
@@ -327,12 +367,18 @@ export const authRouter = createTRPCRouter({
     .mutation(({ input }) => {
       const session = sessions.get(input.sessionToken);
       if (!session || session.expiresAt < new Date()) {
-        throw new Error("Invalid or expired session");
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Invalid or expired session",
+        });
       }
 
       const user = Array.from(users.values()).find(u => u.id === session.userId);
       if (!user) {
-        throw new Error("User not found");
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "User not found",
+        });
       }
 
       user.jobs = user.jobs.filter(j => j.id !== input.jobId);
