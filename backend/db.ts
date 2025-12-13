@@ -8,7 +8,7 @@ const NAMESPACE = process.env.EXPO_PUBLIC_RORK_DB_NAMESPACE;
 const TOKEN = process.env.EXPO_PUBLIC_RORK_DB_TOKEN;
 
 async function dbRequest(method: string, path: string, body?: any) {
-  const url = `${API_BASE}/${path}`;
+  const url = `${API_BASE}/kv/${NAMESPACE}/key/${path}`;
   
   console.log(`[DB] ${method} ${url}`);
   
@@ -17,13 +17,13 @@ async function dbRequest(method: string, path: string, body?: any) {
     headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${TOKEN}`,
-      "X-Namespace": NAMESPACE || "default",
     },
     body: body ? JSON.stringify(body) : undefined,
   });
 
   if (!response.ok) {
-    console.error(`[DB] Error ${response.status}:`, await response.text());
+    const errorText = await response.text();
+    console.error(`[DB] Error ${response.status}:`, errorText);
     throw new Error(`Database error: ${response.status}`);
   }
 
