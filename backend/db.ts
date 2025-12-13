@@ -17,6 +17,10 @@ async function dbRequest(method: string, path: string, body?: any): Promise<any>
   const url = `${DB_ENDPOINT}/kv/${namespace}${path}`;
   
   console.log(`[DB] ${method} ${url}`);
+  console.log(`[DB] Namespace: ${namespace}`);
+  console.log(`[DB] Path: ${path}`);
+  console.log(`[DB] Endpoint: ${DB_ENDPOINT}`);
+  console.log(`[DB] Token present: ${!!DB_TOKEN}`);
   
   const response = await fetch(url, {
     method,
@@ -29,8 +33,15 @@ async function dbRequest(method: string, path: string, body?: any): Promise<any>
 
   if (!response.ok) {
     const text = await response.text();
-    console.error(`[DB] Error: ${response.status} ${text}`);
-    console.error(`[DB] URL: ${url}`);
+    console.error(`[DB] Error Response:`);
+    console.error(`[DB] Status: ${response.status}`);
+    console.error(`[DB] Response Text: ${text}`);
+    console.error(`[DB] Full URL: ${url}`);
+    console.error(`[DB] Method: ${method}`);
+    console.error(`[DB] Headers:`, {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${DB_TOKEN?.substring(0, 10)}...`
+    });
     throw new Error(`Database error: ${response.status}`);
   }
 
