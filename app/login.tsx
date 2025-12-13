@@ -128,6 +128,18 @@ export default function LoginScreen() {
       router.replace("/(tabs)");
     } catch (err: any) {
       console.error("Auth error:", err);
+      
+      // Handle specific error cases
+      if (err.message === "NO_ACCOUNT" || err.message?.includes("NO_ACCOUNT")) {
+        setError("No account found with this email. Please sign up first.");
+        // Auto-switch to registration mode after a brief delay
+        setTimeout(() => {
+          setIsRegistering(true);
+          setError(null);
+        }, 2000);
+        return;
+      }
+      
       setError(err.message || "Authentication failed. Please try again.");
     }
   };
