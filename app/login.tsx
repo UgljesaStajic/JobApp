@@ -15,10 +15,15 @@ import {
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Mail, Lock, User, Eye, EyeOff } from "lucide-react-native";
+import * as Google from "expo-auth-session/providers/google";
+import * as WebBrowser from "expo-web-browser";
 
 import { typography } from "@/constants/typography";
 import { useApp } from "@/context/AppContext";
 import { useTheme } from "@/hooks/useTheme";
+import { trpc } from "@/lib/trpc";
+
+WebBrowser.maybeCompleteAuthSession();
 
 type AuthMode = "login" | "register";
 
@@ -34,6 +39,46 @@ export default function LoginScreen() {
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const registerMutation = trpc.auth.register.useMutation();
+  const loginMutation = trpc.auth.login.useMutation();
+  const googleAuthMutation = trpc.auth.googleAuth.useMutation();
+
+  const [, response, promptAsync] = Google.useAuthRequest({
+    clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
+  });
+
+  const handleGoogleAuthResponse = React.useCallback(async (idToken: string) => {
+    try {
+      const decoded = JSON.parse(
+        atob(idToken.split(".")[1])
+      );
+      
+      const result = await googleAuthMutation.mutateAsync({
+        idToken,
+        email: decoded.email,
+        name: decoded.name,
+      });
+      
+      console.log("Google auth successful:", result.user.email);
+      login(result.user as any, result.sessionToken);
+      router.replace("/(tabs)");
+    } catch (error: any) {
+      console.error("Google auth error:", error);
+      Alert.alert("Error", error.message || "Google authentication failed");
+    } finally {
+      setLoading(false);
+    }
+  }, [googleAuthMutation, login, router]);
+
+  React.useEffect(() => {
+    if (response?.type === "success") {
+      const { authentication } = response;
+      if (authentication?.idToken) {
+        handleGoogleAuthResponse(authentication.idToken);
+      }
+    }
+  }, [response, handleGoogleAuthResponse]);
 
   const handleEmailAuth = async () => {
     if (!email || !password) {
@@ -59,30 +104,45 @@ export default function LoginScreen() {
 
     setLoading(true);
 
-    setTimeout(() => {
+    try {
+      if (mode === "register") {
+        const result = await registerMutation.mutateAsync({
+          email,
+          password,
+          name,
+        });
+        console.log("Registration successful:", result.user.email);
+        login(result.user as any, result.sessionToken);
+        router.replace("/(tabs)");
+      } else {
+        const result = await loginMutation.mutateAsync({
+          email,
+          password,
+        });
+        console.log("Login successful:", result.user.email);
+        login(result.user as any, result.sessionToken);
+        router.replace("/(tabs)");
+      }
+    } catch (error: any) {
+      console.error("Auth error:", error);
+      Alert.alert("Error", error.message || "Authentication failed");
+    } finally {
       setLoading(false);
-      login({
-        name: mode === "register" ? name : "User",
-        email,
-        subscription: "free",
-      });
-      router.replace("/(tabs)");
-    }, 1500);
+    }
   };
 
   const handleGoogleAuth = async () => {
     setLoading(true);
-
-    setTimeout(() => {
+    try {
+      await promptAsync();
+    } catch (error) {
+      console.error("Google auth error:", error);
+      Alert.alert("Error", "Failed to sign in with Google");
       setLoading(false);
-      login({
-        name: "Google User",
-        email: "user@gmail.com",
-        subscription: "free",
-      });
-      router.replace("/(tabs)");
-    }, 1500);
+    }
   };
+
+
 
   const handleForgotPassword = () => {
     Alert.alert(
@@ -227,7 +287,7 @@ export default function LoginScreen() {
             disabled={loading}
           >
             <Text style={[styles.googleIcon, { color: theme.primary }]}>G</Text>
-            <Text style={[styles.googleButtonText, { color: theme.text }]}>Continue with Google (test)</Text>
+            <Text style={[styles.googleButtonText, { color: theme.text }]}>Continue with Google</Text>
           </TouchableOpacity>
 
           <View style={styles.switchMode}>

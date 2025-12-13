@@ -123,12 +123,20 @@ export const [AppProvider, useApp] = createContextHook(() => {
   }, []);
 
   const login = useCallback(
-    (user: { name: string; email: string; subscription: SubscriptionTier }) => {
+    (user: { name: string; email: string; subscription: SubscriptionTier; preferences?: any }, sessionToken?: string) => {
       console.log("User logged in:", user.email);
+      if (sessionToken) {
+        AsyncStorage.setItem("@session_token", sessionToken);
+      }
       const newState = {
         ...state,
         isAuthenticated: true,
-        user,
+        user: {
+          name: user.name,
+          email: user.email,
+          subscription: user.subscription,
+        },
+        preferences: user.preferences ? { ...defaultPreferences, ...user.preferences } : state.preferences,
       };
       saveState(newState);
     },
