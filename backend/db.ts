@@ -13,9 +13,10 @@ async function dbRequest(method: string, path: string, body?: any): Promise<any>
     throw new Error("Database not configured");
   }
 
-  const url = `${DB_ENDPOINT}/${DB_NAMESPACE}${path}`;
+  const namespace = DB_NAMESPACE || 'default';
+  const url = `${DB_ENDPOINT}/kv/${namespace}${path}`;
   
-  console.log(`[DB] ${method} ${path}`);
+  console.log(`[DB] ${method} ${url}`);
   
   const response = await fetch(url, {
     method,
@@ -29,6 +30,7 @@ async function dbRequest(method: string, path: string, body?: any): Promise<any>
   if (!response.ok) {
     const text = await response.text();
     console.error(`[DB] Error: ${response.status} ${text}`);
+    console.error(`[DB] URL: ${url}`);
     throw new Error(`Database error: ${response.status}`);
   }
 
