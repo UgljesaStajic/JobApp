@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
+  ActivityIndicator,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -15,20 +17,39 @@ import {
   Search,
   Briefcase,
   TrendingUp,
-  Filter,
   Edit,
   Trash2,
+  Globe,
+  X,
+  MapPin,
 } from "lucide-react-native";
 
 import { typography } from "@/constants/typography";
 import { useApp } from "@/context/AppContext";
 import { useTheme } from "@/hooks/useTheme";
+import { trpc } from "@/lib/trpc";
 
 export default function JobsScreen() {
   const { theme } = useTheme();
   const router = useRouter();
   const { state, deleteJob } = useApp();
   const [searchQuery, setSearchQuery] = useState("");
+  const [showSearchModal, setShowSearchModal] = useState(false);
+  const [onlineKeywords, setOnlineKeywords] = useState("");
+  const [onlineLocation, setOnlineLocation] = useState("");
+  const [onlineJobs, setOnlineJobs] = useState<any[]>([]);
+  const [showOnlineJobs, setShowOnlineJobs] = useState(false);
+
+  const searchJobsMutation = trpc.jobs.searchJobs.useQuery(
+    {
+      keywords: onlineKeywords,
+      location: onlineLocation,
+      page: 1,
+    },
+    {
+      enabled: false,
+    }
+  );
 
   const filteredJobs = state.jobs.filter(
     (job) =>
@@ -76,8 +97,44 @@ export default function JobsScreen() {
                 borderColor: theme.border,
               },
             ]}
+            onPress={() => setShowSearchModal(true)}
           >
-            <Filter size={20} color={theme.text} />
+            <Globe size={20} color={theme.primary} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={[
+              styles.tab,
+              !showOnlineJobs && [styles.activeTab, { borderBottomColor: theme.primary }],
+            ]}
+            onPress={() => setShowOnlineJobs(false)}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                { color: !showOnlineJobs ? theme.primary : theme.textSecondary },
+              ]}
+            >
+              My Jobs
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.tab,
+              showOnlineJobs && [styles.activeTab, { borderBottomColor: theme.primary }],
+            ]}
+            onPress={() => setShowOnlineJobs(true)}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                { color: showOnlineJobs ? theme.primary : theme.textSecondary },
+              ]}
+            >
+              Search Online
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -86,7 +143,7 @@ export default function JobsScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {filteredJobs.length === 0 ? (
+          {!showOnlineJobs && filteredJobs.length === 0 ? (
             <View style={styles.emptyState}>
               <Briefcase size={64} color={theme.textSecondary} opacity={0.3} />
               <Text style={[styles.emptyTitle, { color: theme.text }]}>
@@ -102,7 +159,7 @@ export default function JobsScreen() {
                 <Text style={styles.emptyButtonText}>Analyze Job</Text>
               </TouchableOpacity>
             </View>
-          ) : (
+          ) : !showOnlineJobs ? (
             <View style={styles.jobsList}>
               {filteredJobs.map((job) => {
                 const application = state.applications.find(
@@ -253,8 +310,188 @@ export default function JobsScreen() {
                 );
               })}
             </View>
+          ) : (
+            <View style={styles.jobsList}>
+              {searchJobsMutation.isLoading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={theme.primary} />
+                  <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
+                    Searching jobs...
+                  </Text>
+                </View>
+              ) : onlineJobs.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Globe size={64} color={theme.textSecondary} opacity={0.3} />
+                  <Text style={[styles.emptyTitle, { color: theme.text }]}>
+                    No online jobs searched yet
+                  </Text>
+                  <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
+                    Tap the globe icon to search for jobs online
+                  </Text>
+                </View>
+              ) : (
+                onlineJobs.map((job, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[styles.jobCard, { backgroundColor: theme.surface }]}
+                    onPress={() => {
+                      Alert.alert(
+                        "Analyze Job",
+                        "Would you like to analyze this job and see your match score?",
+                        [
+                          { text: "Cancel", style: "cancel" },
+                          {
+                            text: "Analyze",
+                            onPress: () => {
+                              console.log("Analyzing online job:", job.title);
+                            },
+                          },
+                        ]
+                      );
+                    }}
+                  >
+                    <View style={styles.jobHeader}>
+                      <View
+                        style={[
+                          styles.companyIcon,
+                          { backgroundColor: theme.accent + "15" },
+                        ]}
+                      >
+                        <Briefcase size={24} color={theme.accent} />
+                      </View>
+                    </View>
+
+                    <Text style={[styles.jobTitle, { color: theme.text }]}>
+                      {job.title}
+                    </Text>
+                    <Text style={[styles.companyName, { color: theme.textSecondary }]}>
+                      {job.company}
+                    </Text>
+
+                    {job.location && (
+                      <View style={styles.locationRow}>
+                        <MapPin size={14} color={theme.textSecondary} />
+                        <Text style={[styles.locationText, { color: theme.textSecondary }]}>
+                          {job.location}
+                        </Text>
+                      </View>
+                    )}
+
+                    {job.snippet && (
+                      <Text
+                        style={[styles.jobSnippet, { color: theme.textSecondary }]}
+                        numberOfLines={3}
+                      >
+                        {job.snippet}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                ))
+              )}
+            </View>
           )}
         </ScrollView>
+
+        <Modal
+          visible={showSearchModal}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setShowSearchModal(false)}
+        >
+          <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+            <SafeAreaView style={styles.modalSafe}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { color: theme.text }]}>
+                  Search Jobs Online
+                </Text>
+                <TouchableOpacity
+                  style={styles.closeButton}
+                  onPress={() => setShowSearchModal(false)}
+                >
+                  <X size={24} color={theme.text} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.modalContent}>
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.inputLabel, { color: theme.text }]}>
+                    Keywords
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: theme.surface,
+                        color: theme.text,
+                        borderColor: theme.border,
+                      },
+                    ]}
+                    placeholder="e.g. Software Engineer, Designer..."
+                    placeholderTextColor={theme.textSecondary}
+                    value={onlineKeywords}
+                    onChangeText={setOnlineKeywords}
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.inputLabel, { color: theme.text }]}>
+                    Location (Optional)
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: theme.surface,
+                        color: theme.text,
+                        borderColor: theme.border,
+                      },
+                    ]}
+                    placeholder="e.g. New York, London..."
+                    placeholderTextColor={theme.textSecondary}
+                    value={onlineLocation}
+                    onChangeText={setOnlineLocation}
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.searchButton,
+                    {
+                      backgroundColor:
+                        !onlineKeywords.trim() || searchJobsMutation.isFetching
+                          ? theme.textSecondary
+                          : theme.primary,
+                    },
+                  ]}
+                  onPress={async () => {
+                    if (!onlineKeywords.trim()) return;
+
+                    try {
+                      const result = await searchJobsMutation.refetch();
+                      if (result.data) {
+                        setOnlineJobs(result.data.jobs);
+                        setShowOnlineJobs(true);
+                        setShowSearchModal(false);
+                      }
+                    } catch {
+                      Alert.alert("Error", "Failed to search jobs. Please try again.");
+                    }
+                  }}
+                  disabled={!onlineKeywords.trim() || searchJobsMutation.isFetching}
+                >
+                  {searchJobsMutation.isFetching ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <>
+                      <Search size={20} color="white" />
+                      <Text style={styles.searchButtonText}>Search Jobs</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </SafeAreaView>
+          </View>
+        </Modal>
       </SafeAreaView>
     </View>
   );
@@ -333,12 +570,30 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  tabContainer: {
+    flexDirection: "row",
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: "center",
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
+  },
+  activeTab: {
+    borderBottomWidth: 2,
+  },
+  tabText: {
+    ...typography.button,
+  },
   scroll: {
     flex: 1,
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 24,
+    paddingBottom: 100,
   },
   emptyState: {
     flex: 1,
@@ -354,6 +609,7 @@ const styles = StyleSheet.create({
   emptySubtitle: {
     ...typography.body,
     marginBottom: 24,
+    textAlign: "center",
   },
   emptyButton: {
     paddingHorizontal: 24,
@@ -449,5 +705,83 @@ const styles = StyleSheet.create({
   statusText: {
     ...typography.caption,
     fontWeight: "700",
+  },
+  locationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 8,
+  },
+  locationText: {
+    ...typography.bodySmall,
+  },
+  jobSnippet: {
+    ...typography.bodySmall,
+    lineHeight: 20,
+    marginTop: 8,
+  },
+  loadingContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 80,
+    gap: 16,
+  },
+  loadingText: {
+    ...typography.body,
+  },
+  modalContainer: {
+    flex: 1,
+  },
+  modalSafe: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  modalTitle: {
+    ...typography.h3,
+  },
+  closeButton: {
+    padding: 8,
+  },
+  modalContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 24,
+  },
+  inputGroup: {
+    marginBottom: 24,
+  },
+  inputLabel: {
+    ...typography.h4,
+    marginBottom: 12,
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    ...typography.body,
+  },
+  searchButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    padding: 18,
+    borderRadius: 16,
+    shadowColor: "#0B6EFD",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  searchButtonText: {
+    color: "white",
+    ...typography.button,
   },
 });

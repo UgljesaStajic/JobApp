@@ -24,6 +24,7 @@ export default function TabLayout() {
           height: 72 + Math.max(insets.bottom, 8),
           position: "absolute",
           overflow: "hidden",
+          bottom: -15,
         },
         tabBarIconStyle: {
           marginTop: 0,

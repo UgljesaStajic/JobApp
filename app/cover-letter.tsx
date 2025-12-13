@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  useColorScheme,
   TextInput,
   ActivityIndicator,
 } from "react-native";
@@ -20,17 +19,16 @@ import {
 import { useMutation } from "@tanstack/react-query";
 import { generateText } from "@rork-ai/toolkit-sdk";
 
-import Colors from "@/constants/colors";
 import { typography } from "@/constants/typography";
 import { useApp } from "@/context/AppContext";
+import { useTheme } from "@/hooks/useTheme";
 import { SUBSCRIPTION_FEATURES } from "@/types/subscription";
 
 type ToneType = "professional" | "friendly" | "confident" | "creative";
 type LengthType = "short" | "standard" | "long";
 
 export default function CoverLetterScreen() {
-  const colorScheme = useColorScheme();
-  const colors = colorScheme === "dark" ? Colors.dark : Colors.light;
+  const { theme } = useTheme();
   const router = useRouter();
   const { state, addCoverLetter } = useApp();
   const [jobDescription, setJobDescription] = useState("");
@@ -122,7 +120,7 @@ Format: Standard cover letter with greeting, body paragraphs, and closing.`,
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
         <ScrollView
           style={styles.scroll}
@@ -130,31 +128,31 @@ Format: Standard cover letter with greeting, body paragraphs, and closing.`,
           showsVerticalScrollIndicator={false}
         >
           {!canGenerate && (
-            <View style={[styles.limitBanner, { backgroundColor: colors.warning + "20" }]}>
-              <AlertCircle size={20} color={colors.warning} />
-              <Text style={[styles.limitText, { color: colors.warning }]}>
+            <View style={[styles.limitBanner, { backgroundColor: theme.warning + "20" }]}>
+              <AlertCircle size={20} color={theme.warning} />
+              <Text style={[styles.limitText, { color: theme.warning }]}>
                 Cover letter limit reached. Upgrade to Plus for unlimited letters.
               </Text>
             </View>
           )}
 
           <View style={styles.section}>
-            <Text style={[styles.label, { color: colors.text }]}>
+            <Text style={[styles.label, { color: theme.text }]}>
               Job Description
             </Text>
             <TextInput
               style={[
                 styles.textArea,
                 {
-                  backgroundColor: colors.surface,
-                  color: colors.text,
-                  borderColor: colors.border,
+                  backgroundColor: theme.surface,
+                  color: theme.text,
+                  borderColor: theme.border,
                 },
               ]}
               multiline
               numberOfLines={8}
               placeholder="Paste the job description here..."
-              placeholderTextColor={colors.textSecondary}
+              placeholderTextColor={theme.textSecondary}
               value={jobDescription}
               onChangeText={setJobDescription}
               textAlignVertical="top"
@@ -162,7 +160,7 @@ Format: Standard cover letter with greeting, body paragraphs, and closing.`,
           </View>
 
           <View style={styles.section}>
-            <Text style={[styles.label, { color: colors.text }]}>
+            <Text style={[styles.label, { color: theme.text }]}>
               Tone
             </Text>
             <View style={styles.optionsGrid}>
@@ -172,8 +170,8 @@ Format: Standard cover letter with greeting, body paragraphs, and closing.`,
                   style={[
                     styles.optionButton,
                     {
-                      backgroundColor: tone === t ? colors.primary : colors.surface,
-                      borderColor: tone === t ? colors.primary : colors.border,
+                      backgroundColor: tone === t ? theme.primary : theme.surface,
+                      borderColor: tone === t ? theme.primary : theme.border,
                     },
                   ]}
                   onPress={() => setTone(t)}
@@ -181,7 +179,7 @@ Format: Standard cover letter with greeting, body paragraphs, and closing.`,
                   <Text
                     style={[
                       styles.optionText,
-                      { color: tone === t ? "white" : colors.text },
+                      { color: tone === t ? "white" : theme.text },
                     ]}
                   >
                     {t.charAt(0).toUpperCase() + t.slice(1)}
@@ -192,7 +190,7 @@ Format: Standard cover letter with greeting, body paragraphs, and closing.`,
           </View>
 
           <View style={styles.section}>
-            <Text style={[styles.label, { color: colors.text }]}>
+            <Text style={[styles.label, { color: theme.text }]}>
               Length
             </Text>
             <View style={styles.optionsRow}>
@@ -202,8 +200,8 @@ Format: Standard cover letter with greeting, body paragraphs, and closing.`,
                   style={[
                     styles.lengthButton,
                     {
-                      backgroundColor: length === l ? colors.accent : colors.surface,
-                      borderColor: length === l ? colors.accent : colors.border,
+                      backgroundColor: length === l ? theme.accent : theme.surface,
+                      borderColor: length === l ? theme.accent : theme.border,
                     },
                   ]}
                   onPress={() => setLength(l)}
@@ -211,7 +209,7 @@ Format: Standard cover letter with greeting, body paragraphs, and closing.`,
                   <Text
                     style={[
                       styles.lengthText,
-                      { color: length === l ? "white" : colors.text },
+                      { color: length === l ? "white" : theme.text },
                     ]}
                   >
                     {l.charAt(0).toUpperCase() + l.slice(1)}
@@ -226,8 +224,8 @@ Format: Standard cover letter with greeting, body paragraphs, and closing.`,
               styles.generateButton,
               {
                 backgroundColor: generateMutation.isPending || !jobDescription.trim()
-                  ? colors.textSecondary
-                  : colors.primary,
+                  ? theme.textSecondary
+                  : theme.primary,
               },
             ]}
             onPress={handleGenerate}
@@ -248,24 +246,24 @@ Format: Standard cover letter with greeting, body paragraphs, and closing.`,
 
           {generatedLetter && (
             <View style={styles.resultsSection}>
-              <Text style={[styles.resultsTitle, { color: colors.text }]}>
+              <Text style={[styles.resultsTitle, { color: theme.text }]}>
                 Your Cover Letter
               </Text>
               <View
                 style={[
                   styles.resultCard,
-                  { backgroundColor: colors.surface },
+                  { backgroundColor: theme.surface },
                 ]}
               >
-                <FileText size={24} color={colors.accent} />
-                <Text style={[styles.resultText, { color: colors.text }]}>
+                <FileText size={24} color={theme.accent} />
+                <Text style={[styles.resultText, { color: theme.text }]}>
                   {generatedLetter}
                 </Text>
               </View>
 
               <View style={styles.actionButtons}>
                 <TouchableOpacity
-                  style={[styles.saveButton, { backgroundColor: colors.success }]}
+                  style={[styles.saveButton, { backgroundColor: theme.success }]}
                   onPress={handleSave}
                 >
                   <CheckCircle2 size={20} color="white" />
@@ -292,6 +290,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
+    paddingBottom: 120,
   },
   limitBanner: {
     flexDirection: "row",
