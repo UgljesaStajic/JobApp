@@ -12,11 +12,10 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { BlurView } from "expo-blur";
-import { ChevronDown, ChevronUp, ArrowLeft, LogOut } from "lucide-react-native";
+import { ChevronDown, ChevronUp, ArrowLeft } from "lucide-react-native";
 
 import { typography } from "@/constants/typography";
 import { useTheme } from "@/hooks/useTheme";
-import { useApp } from "@/context/AppContext";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -63,17 +62,11 @@ const FAQ_DATA: FAQItem[] = [
 export default function HelpScreen() {
   const router = useRouter();
   const { theme, themeType } = useTheme();
-  const { logout } = useApp();
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
   const toggleExpand = (index: number) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpandedIndex(expandedIndex === index ? null : index);
-  };
-
-  const handleLogout = () => {
-    logout();
-    router.replace("/login");
   };
 
   const SurfaceWrapper = themeType === "space" ? BlurView : View;
@@ -164,18 +157,6 @@ export default function HelpScreen() {
               onPress={() => router.push("/support")}
             >
               <Text style={styles.contactButtonText}>Contact Support</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.logoutSection}>
-            <TouchableOpacity
-              style={[styles.logoutButton, { borderColor: theme.error }]}
-              onPress={handleLogout}
-            >
-              <LogOut size={20} color={theme.error} />
-              <Text style={[styles.logoutText, { color: theme.error }]}>
-                Log Out
-              </Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -285,24 +266,6 @@ const styles = StyleSheet.create({
   },
   contactButtonText: {
     color: "white",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  logoutSection: {
-    marginTop: 32,
-    alignItems: "center",
-  },
-  logoutButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 16,
-    borderWidth: 2,
-  },
-  logoutText: {
     fontSize: 16,
     fontWeight: "700",
   },

@@ -10,6 +10,7 @@ import type {
   InterviewSession,
 } from "@/types/models";
 
+
 type ThemeType = "dark" | "light" | "space";
 
 interface AppState {
@@ -64,13 +65,15 @@ const defaultState: AppState = {
 
 export const [AppProvider, useApp] = createContextHook(() => {
   const [state, setState] = useState<AppState>(defaultState);
-
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const loadState = async () => {
       try {
         const stored = await AsyncStorage.getItem(STORAGE_KEY);
+        const storedToken = await AsyncStorage.getItem("@session_token");
+        
         if (stored) {
           const parsed = JSON.parse(stored);
           setState({
@@ -103,6 +106,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
             })) || [],
           });
         }
+        
+        if (storedToken) {
+          setSessionToken(storedToken);
+        }
       } catch (error) {
         console.error("Failed to load state:", error);
       } finally {
@@ -123,10 +130,11 @@ export const [AppProvider, useApp] = createContextHook(() => {
   }, []);
 
   const login = useCallback(
-    (user: { name: string; email: string; subscription: SubscriptionTier; preferences?: any }, sessionToken?: string) => {
+    (user: { name: string; email: string; subscription: SubscriptionTier; preferences?: any }, token?: string) => {
       console.log("User logged in:", user.email);
-      if (sessionToken) {
-        AsyncStorage.setItem("@session_token", sessionToken);
+      if (token) {
+        AsyncStorage.setItem("@session_token", token);
+        setSessionToken(token);
       }
       const newState = {
         ...state,
@@ -143,8 +151,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
     [state, saveState]
   );
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
     console.log("User logged out");
+    await AsyncStorage.removeItem("@session_token");
+    setSessionToken(null);
     const newState = {
       ...state,
       isAuthenticated: false,
@@ -153,6 +163,11 @@ export const [AppProvider, useApp] = createContextHook(() => {
         email: "",
         subscription: "free" as SubscriptionTier,
       },
+      resumes: [],
+      jobs: [],
+      applications: [],
+      coverLetters: [],
+      interviewSessions: [],
     };
     saveState(newState);
   }, [state, saveState]);
@@ -330,6 +345,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
   return {
     state,
     isLoading,
+    sessionToken,
     login,
     logout,
     updateSubscription,

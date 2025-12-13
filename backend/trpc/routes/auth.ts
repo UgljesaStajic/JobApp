@@ -100,11 +100,11 @@ export const authRouter = createTRPCRouter({
       
       const user = users.get(input.email);
       if (!user) {
-        throw new Error("Invalid email or password");
+        throw new Error("No account found with this email address");
       }
 
       if (!verifyPassword(input.password, user.passwordHash)) {
-        throw new Error("Invalid email or password");
+        throw new Error("Password incorrect. Please try again.");
       }
 
       const sessionToken = generateSessionToken();
