@@ -134,9 +134,10 @@ export const authRouter = createTRPCRouter({
       // 1. Find User ID
       const mapping = await db.get<EmailMapping>("user_emails", emailRaw);
       if (!mapping) {
+        // Obscure error for security, or be explicit for UX. Being explicit here as per request.
         throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "NO_ACCOUNT",
+          code: "BAD_REQUEST",
+          message: "No account found with this email address.",
         });
       }
 
