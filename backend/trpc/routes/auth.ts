@@ -37,7 +37,7 @@ function generateSessionToken(): string {
 }
 
 function sanitizeEmail(email: string): string {
-  return email.toLowerCase().replace(/[^a-z0-9]/g, "_");
+  return email.toLowerCase().trim();
 }
 
 export const authRouter = createTRPCRouter({
