@@ -9,11 +9,23 @@ export const jobsRouter = createTRPCRouter({
       page: z.number().default(1),
     }))
     .query(async ({ input }) => {
-      const appId = process.env.EXPO_PUBLIC_ADZUNA_APP_ID;
-      const appKey = process.env.EXPO_PUBLIC_ADZUNA_APP_KEY;
-      
+      const appId =
+        process.env.EXPO_PUBLIC_ADZUNA_APP_ID ??
+        process.env.EXPO_PUBLIC_ADZUNA_API_ID ??
+        process.env.EXPO_PUBLIC_ADZUNA_APPID ??
+        process.env.EXPO_PUBLIC_ADZUNA_ID;
+      const appKey =
+        process.env.EXPO_PUBLIC_ADZUNA_APP_KEY ??
+        process.env.EXPO_PUBLIC_ADZUNA_API_KEY ??
+        process.env.EXPO_PUBLIC_ADZUNA_KEY;
+
       if (!appId || !appKey) {
-        throw new Error("Adzuna API credentials not configured");
+        console.error(
+          "[jobs.searchJobs] Missing Adzuna credentials. Expected envs: EXPO_PUBLIC_ADZUNA_APP_ID + EXPO_PUBLIC_ADZUNA_APP_KEY (or *_API_ID/*_API_KEY)",
+        );
+        throw new Error(
+          "Adzuna API credentials not configured. Please set EXPO_PUBLIC_ADZUNA_APP_ID and EXPO_PUBLIC_ADZUNA_APP_KEY.",
+        );
       }
 
       try {
