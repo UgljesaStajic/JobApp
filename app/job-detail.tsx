@@ -169,14 +169,76 @@ export default function JobDetailScreen() {
             )}
           </View>
 
-          {(job.description || job.rawJobData?.snippet) && (
-            <View style={[styles.section, { backgroundColor: theme.surface }]}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Job Description</Text>
-              <Text style={[styles.sectionContent, { color: theme.text }]}>
-                {job.description || job.rawJobData?.snippet}
-              </Text>
-            </View>
-          )}
+          {(() => {
+            const pickString = (...values: unknown[]): string | undefined => {
+              for (const v of values) {
+                if (typeof v === "string" && v.trim()) return v;
+              }
+              return undefined;
+            };
+
+            const normalize = (input: string): string => {
+              const withBreaks = input
+                .replace(/<br\s*\/?\s*>/gi, "\n")
+                .replace(/<\/p\s*>/gi, "\n\n")
+                .replace(/<p\s*[^>]*>/gi, "")
+                .replace(/<li\s*[^>]*>/gi, "• ")
+                .replace(/<\/li\s*>/gi, "\n")
+                .replace(/<\/ul\s*>/gi, "\n")
+                .replace(/<[^>]+>/g, "")
+                .replace(/&nbsp;/g, " ")
+                .replace(/&amp;/g, "&")
+                .replace(/&quot;/g, '"')
+                .replace(/&#39;/g, "'");
+
+              return withBreaks.replace(/\n{3,}/g, "\n\n").trim();
+            };
+
+            const raw = (job.rawJobData ?? {}) as Record<string, unknown>;
+
+            const description = pickString(
+              job.description,
+              raw.description,
+              raw.fullDescription,
+              raw.jobDescription,
+              raw.snippet,
+              (job as any)?.snippet,
+              (job as any)?.description,
+              (job as any)?.body
+            );
+
+            const requirements = pickString(
+              (job as any)?.requirements,
+              raw.requirements,
+              raw.qualification,
+              raw.qualifications,
+              raw.requiredSkills
+            );
+
+            if (!description && !requirements) return null;
+
+            return (
+              <View style={[styles.section, { backgroundColor: theme.surface }]}>
+                {description ? (
+                  <>
+                    <Text style={[styles.sectionTitle, { color: theme.text }]}>Job Description</Text>
+                    <Text style={[styles.sectionContent, { color: theme.text }]}>
+                      {normalize(description)}
+                    </Text>
+                  </>
+                ) : null}
+
+                {requirements ? (
+                  <>
+                    <Text style={[styles.sectionTitle, { color: theme.text }]}>Requirements</Text>
+                    <Text style={[styles.sectionContent, { color: theme.text }]}>
+                      {normalize(requirements)}
+                    </Text>
+                  </>
+                ) : null}
+              </View>
+            );
+          })()}
 
           {job.mustHaveSkills && job.mustHaveSkills.length > 0 && (
             <View style={[styles.section, { backgroundColor: theme.surface }]}>
@@ -238,26 +300,23 @@ export default function JobDetailScreen() {
                 Full Job Information
               </Text>
               {Object.entries(job)
-                .filter(([key]) => key !== 'matchScore' && key !== 'id' && key !== 'updated')
-                .filter(([_, value]) => value !== null && value !== undefined && value !== '')
+                .filter(([key]) => key !== "matchScore" && key !== "id" && key !== "updated")
+                .filter(([_, value]) => value !== null && value !== undefined && value !== "")
                 .map(([key, value]) => {
-                  const displayValue = typeof value === 'object' 
-                    ? JSON.stringify(value, null, 2) 
-                    : String(value);
-                  
-                  if (!displayValue || displayValue === '' || displayValue === 'undefined') return null;
-                  
+                  const displayValue =
+                    typeof value === "object" ? JSON.stringify(value, null, 2) : String(value);
+
+                  if (!displayValue || displayValue === "" || displayValue === "undefined") return null;
+
                   return (
                     <View key={key} style={styles.dataRow}>
                       <Text style={[styles.dataKey, { color: theme.textSecondary }]}>
                         {String(key)}
                       </Text>
-                      <Text style={[styles.dataValue, { color: theme.text }]}>
-                        {String(displayValue)}
-                      </Text>
+                      <Text style={[styles.dataValue, { color: theme.text }]}>{displayValue}</Text>
                     </View>
                   );
-                }).filter(Boolean)}
+                })}
             </View>
           )}
 
@@ -267,23 +326,21 @@ export default function JobDetailScreen() {
                 Full API Data
               </Text>
               {Object.entries(job.rawJobData)
-                .filter(([key]) => key !== 'id' && key !== 'updated')
-                .filter(([_, value]) => value !== null && value !== undefined && value !== '')
+                .filter(([key]) => key !== "id" && key !== "updated")
+                .filter(([_, value]) => value !== null && value !== undefined && value !== "")
                 .map(([key, value]) => {
                   const displayValue = String(value);
-                  if (!displayValue || displayValue === 'undefined') return null;
-                  
+                  if (!displayValue || displayValue === "undefined") return null;
+
                   return (
                     <View key={key} style={styles.dataRow}>
                       <Text style={[styles.dataKey, { color: theme.textSecondary }]}>
                         {String(key)}
                       </Text>
-                      <Text style={[styles.dataValue, { color: theme.text }]}>
-                        {displayValue}
-                      </Text>
+                      <Text style={[styles.dataValue, { color: theme.text }]}>{displayValue}</Text>
                     </View>
                   );
-                }).filter(Boolean)}
+                })}
             </View>
           )}
 
