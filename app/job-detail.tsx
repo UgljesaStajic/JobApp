@@ -39,12 +39,21 @@ interface ComparisonResult {
 
 export default function JobDetailScreen() {
   const { theme } = useTheme();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, online } = useLocalSearchParams<{ id?: string; online?: string }>();
   const { state } = useApp();
   const [showCompareModal, setShowCompareModal] = useState(false);
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null);
   
-  const job = state.jobs.find((j) => j.id === id);
+  let job = state.jobs.find((j) => j.id === id);
+  
+  if (!job && online) {
+    try {
+      const onlineJob = JSON.parse(decodeURIComponent(online));
+      job = onlineJob;
+    } catch (error) {
+      console.error("Failed to parse online job:", error);
+    }
+  }
 
   const compareMutation = useMutation({
     mutationFn: async ({ resumeId }: { resumeId: string }) => {
@@ -67,10 +76,10 @@ Education: ${resume.education.map(e => `${e.degree} from ${e.school}`).join("\n"
 Job Posting:
 Title: ${job.title}
 Company: ${job.company}
-Description: ${job.description}
-Required Skills: ${job.mustHaveSkills.join(", ")}
-Nice to Have: ${job.niceToHave.join(", ")}
-Responsibilities: ${job.responsibilities.join(", ")}
+Description: ${job.description || job.rawJobData?.snippet || "N/A"}
+Required Skills: ${job.mustHaveSkills?.join(", ") || "N/A"}
+Nice to Have: ${job.niceToHave?.join(", ") || "N/A"}
+Responsibilities: ${job.responsibilities?.join(", ") || "N/A"}
 
 Analyze the match and return ONLY valid JSON in this exact format:
 {
@@ -231,7 +240,7 @@ Be honest and specific. Return ONLY the JSON object, no other text.`,
               <View style={styles.metaRow}>
                 <Calendar size={16} color={theme.textSecondary} />
                 <Text style={[styles.metaText, { color: theme.textSecondary }]}>
-                  Posted: {job.rawJobData?.updated || job.createdAt.toLocaleDateString()}
+                  Posted: {job.rawJobData?.updated || (typeof job.createdAt === 'string' ? job.createdAt : job.createdAt?.toLocaleDateString?.() || 'N/A')}
                 </Text>
               </View>
             )}
@@ -246,12 +255,14 @@ Be honest and specific. Return ONLY the JSON object, no other text.`,
             )}
           </View>
 
-          <View style={[styles.section, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Description</Text>
-            <Text style={[styles.sectionContent, { color: theme.text }]}>
-              {job.description}
-            </Text>
-          </View>
+          {job.description && (
+            <View style={[styles.section, { backgroundColor: theme.surface }]}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Description</Text>
+              <Text style={[styles.sectionContent, { color: theme.text }]}>
+                {job.description}
+              </Text>
+            </View>
+          )}
 
           {job.rawJobData?.snippet && (
             <View style={[styles.section, { backgroundColor: theme.surface }]}>
