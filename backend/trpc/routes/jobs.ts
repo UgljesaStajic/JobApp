@@ -9,38 +9,67 @@ export const jobsRouter = createTRPCRouter({
       page: z.number().default(1),
     }))
     .query(async ({ input }) => {
-      const apiKey = process.env.EXPO_PUBLIC_JOOBLE_API_KEY;
+      const appId = process.env.EXPO_PUBLIC_ADZUNA_APP_ID;
+      const appKey = process.env.EXPO_PUBLIC_ADZUNA_APP_KEY;
       
-      if (!apiKey) {
-        throw new Error("Jooble API key not configured");
+      if (!appId || !appKey) {
+        throw new Error("Adzuna API credentials not configured");
       }
 
       try {
-        const response = await fetch(`https://jooble.org/api/${apiKey}`, {
-          method: "POST",
+        const country = "us";
+        const url = new URL(`https://api.adzuna.com/v1/api/jobs/${country}/search/${input.page}`);
+        url.searchParams.append("app_id", appId);
+        url.searchParams.append("app_key", appKey);
+        url.searchParams.append("results_per_page", "30");
+        url.searchParams.append("what", input.keywords);
+        
+        if (input.location) {
+          url.searchParams.append("where", input.location);
+        }
+
+        console.log("Adzuna API request:", url.toString());
+
+        const response = await fetch(url.toString(), {
+          method: "GET",
           headers: {
-            "Content-Type": "application/json",
+            "Accept": "application/json",
           },
-          body: JSON.stringify({
-            keywords: input.keywords,
-            location: input.location || "",
-            page: input.page.toString(),
-          }),
         });
 
         if (!response.ok) {
-          throw new Error(`Jooble API error: ${response.statusText}`);
+          throw new Error(`Adzuna API error: ${response.statusText}`);
         }
 
         const data = await response.json();
+        console.log("Adzuna API response:", JSON.stringify(data, null, 2));
+
+        const jobs = (data.results || []).map((job: any) => ({
+          title: job.title || "",
+          company: job.company?.display_name || "Company not specified",
+          location: job.location?.display_name || "",
+          snippet: job.description || "",
+          salary: job.salary_min && job.salary_max 
+            ? `${job.salary_min.toLocaleString()} - ${job.salary_max.toLocaleString()}`
+            : job.salary_min
+            ? `From ${job.salary_min.toLocaleString()}`
+            : "",
+          source: "Adzuna",
+          type: job.contract_type || job.contract_time || "",
+          link: job.redirect_url || "",
+          id: job.id || "",
+          created: job.created || "",
+          category: job.category?.label || "",
+          ...job,
+        }));
 
         return {
-          jobs: data.jobs || [],
-          totalCount: data.totalCount || 0,
+          jobs,
+          totalCount: data.count || 0,
         };
       } catch (error) {
-        console.error("Jooble API error:", error);
-        throw new Error("Failed to fetch jobs from Jooble API");
+        console.error("Adzuna API error:", error);
+        throw new Error("Failed to fetch jobs from Adzuna API");
       }
     }),
 });

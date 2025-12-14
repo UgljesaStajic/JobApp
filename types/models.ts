@@ -27,7 +27,7 @@ export interface Resume {
   updatedAt: Date;
 }
 
-export interface JoobleJobData {
+export interface AdzunaJobData {
   title: string;
   location: string;
   snippet: string;
@@ -36,8 +36,9 @@ export interface JoobleJobData {
   type: string;
   link: string;
   company: string;
-  updated: string;
+  created: string;
   id: string;
+  category?: string;
   [key: string]: unknown;
 }
 
@@ -59,7 +60,7 @@ export interface Job {
 
   location?: string;
   url?: string;
-  rawJobData?: JoobleJobData;
+  rawJobData?: AdzunaJobData;
 }
 
 export interface Application {
