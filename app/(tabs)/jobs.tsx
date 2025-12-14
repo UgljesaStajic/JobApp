@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -28,6 +28,7 @@ import { typography } from "@/constants/typography";
 import { useApp } from "@/context/AppContext";
 import { useTheme } from "@/hooks/useTheme";
 import { trpc } from "@/lib/trpc";
+import { generateText } from "@rork-ai/toolkit-sdk";
 
 export default function JobsScreen() {
   const { theme } = useTheme();
@@ -38,6 +39,7 @@ export default function JobsScreen() {
   const [onlineKeywords, setOnlineKeywords] = useState("");
   const [onlineLocation, setOnlineLocation] = useState("");
   const [onlineJobs, setOnlineJobs] = useState<any[]>([]);
+  const [calculatingMatches, setCalculatingMatches] = useState(false);
   const [showOnlineJobs, setShowOnlineJobs] = useState(false);
 
   const searchJobsMutation = trpc.jobs.searchJobs.useQuery(
@@ -56,6 +58,69 @@ export default function JobsScreen() {
       job.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       job.company.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const calculateMatchScores = useCallback(async (jobs: any[]) => {
+    console.log("Calculating match scores for", jobs.length, "jobs");
+    
+    if (state.resumes.length === 0) {
+      console.log("No resumes found, returning 0% match");
+      return jobs.map(job => ({ ...job, matchScore: 0 }));
+    }
+
+    setCalculatingMatches(true);
+    const primaryResume = state.resumes[0];
+    
+    try {
+      const jobsWithScores = await Promise.all(
+        jobs.map(async (job) => {
+          try {
+            const result = await generateText({
+              messages: [
+                {
+                  role: "user",
+                  content: `You are a job matching expert. Compare this resume against the job posting and return ONLY a match score from 0-100.
+
+Resume:
+Title: ${primaryResume.title}
+Skills: ${primaryResume.skills.join(", ")}
+Experience: ${primaryResume.experience.map(e => `${e.title} at ${e.company}`).join(", ")}
+
+Job:
+Title: ${job.title}
+Company: ${job.company}
+Description: ${job.snippet || ""}
+Location: ${job.location || ""}
+
+Be realistic and honest. Consider:
+- Relevant skills match
+- Experience level alignment
+- Job title relevance
+- Industry match
+
+Return ONLY a number between 0-100, nothing else.`,
+                },
+              ],
+            });
+
+            const score = parseInt(result.trim()) || 0;
+            const clampedScore = Math.min(Math.max(score, 0), 100);
+            console.log(`Match score for ${job.title}: ${clampedScore}%`);
+            return { ...job, matchScore: clampedScore };
+          } catch (error) {
+            console.error("Error calculating match for job:", job.title, error);
+            return { ...job, matchScore: 0 };
+          }
+        })
+      );
+      
+      setCalculatingMatches(false);
+      return jobsWithScores;
+    } catch (error) {
+      console.error("Error calculating match scores:", error);
+      setCalculatingMatches(false);
+      return jobs.map(job => ({ ...job, matchScore: 0 }));
+    }
+  }, [state.resumes]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -336,13 +401,20 @@ export default function JobsScreen() {
                     Tap the globe icon to search for jobs online
                   </Text>
                 </View>
+              ) : calculatingMatches ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={theme.primary} />
+                  <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
+                    Calculating resume matches...
+                  </Text>
+                </View>
               ) : (
                 onlineJobs.map((job, index) => (
                   <TouchableOpacity
                     key={index}
                     style={[styles.jobCard, { backgroundColor: theme.surface }]}
                     onPress={() => {
-                      router.push(`/job-analyzer?preload=${encodeURIComponent(JSON.stringify(job))}`);
+                      router.push(`/job-detail?online=${encodeURIComponent(JSON.stringify(job))}`);
                     }}
                   >
                     <View style={styles.jobHeader}>
@@ -354,6 +426,45 @@ export default function JobsScreen() {
                       >
                         <Briefcase size={24} color={theme.accent} />
                       </View>
+                      <View
+                        style={[
+                          styles.onlineMatchBadge,
+                          {
+                            backgroundColor:
+                              job.matchScore >= 70
+                                ? theme.success + "20"
+                                : job.matchScore >= 40
+                                ? theme.warning + "20"
+                                : theme.error + "20",
+                          },
+                        ]}
+                      >
+                        <TrendingUp
+                          size={14}
+                          color={(
+                            job.matchScore >= 70
+                              ? theme.success
+                              : job.matchScore >= 40
+                              ? theme.warning
+                              : theme.error
+                          )}
+                        />
+                        <Text
+                          style={[
+                            styles.matchText,
+                            {
+                              color:
+                                job.matchScore >= 70
+                                  ? theme.success
+                                  : job.matchScore >= 40
+                                  ? theme.warning
+                                  : theme.error,
+                            },
+                          ]}
+                        >
+                          {job.matchScore}%
+                        </Text>
+                      </View>
                     </View>
 
                     <Text style={[styles.jobTitle, { color: theme.text }]}>
@@ -363,19 +474,28 @@ export default function JobsScreen() {
                       {job.company}
                     </Text>
 
-                    {job.location && (
-                      <View style={styles.locationRow}>
-                        <MapPin size={14} color={theme.textSecondary} />
-                        <Text style={[styles.locationText, { color: theme.textSecondary }]}>
-                          {job.location}
-                        </Text>
-                      </View>
-                    )}
+                    <View style={styles.onlineJobMeta}>
+                      {job.location && (
+                        <View style={styles.metaChip}>
+                          <MapPin size={12} color={theme.textSecondary} />
+                          <Text style={[styles.metaChipText, { color: theme.textSecondary }]}>
+                            {job.location}
+                          </Text>
+                        </View>
+                      )}
+                      {job.salary && (
+                        <View style={[styles.metaChip, { backgroundColor: theme.success + "15" }]}>
+                          <Text style={[styles.salaryText, { color: theme.success }]}>
+                            {job.salary}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
 
                     {job.snippet && (
                       <Text
                         style={[styles.jobSnippet, { color: theme.textSecondary }]}
-                        numberOfLines={3}
+                        numberOfLines={2}
                       >
                         {job.snippet}
                       </Text>
@@ -464,7 +584,8 @@ export default function JobsScreen() {
                     try {
                       const result = await searchJobsMutation.refetch();
                       if (result.data) {
-                        setOnlineJobs(result.data.jobs);
+                        const jobsWithMatches = await calculateMatchScores(result.data.jobs);
+                        setOnlineJobs(jobsWithMatches);
                         setShowOnlineJobs(true);
                         setShowSearchModal(false);
                       }
@@ -709,6 +830,37 @@ const styles = StyleSheet.create({
   },
   locationText: {
     ...typography.bodySmall,
+  },
+  onlineMatchBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  onlineJobMeta: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 8,
+  },
+  metaChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  metaChipText: {
+    ...typography.caption,
+    fontSize: 11,
+  },
+  salaryText: {
+    ...typography.caption,
+    fontSize: 11,
+    fontWeight: "700",
   },
   jobSnippet: {
     ...typography.bodySmall,
