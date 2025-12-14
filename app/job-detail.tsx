@@ -250,16 +250,14 @@ export default function JobDetailScreen() {
                   return (
                     <View key={key} style={styles.dataRow}>
                       <Text style={[styles.dataKey, { color: theme.textSecondary }]}>
-                        {key}
+                        {key}:
                       </Text>
                       <Text style={[styles.dataValue, { color: theme.text }]}>
                         {displayValue}
                       </Text>
                     </View>
                   );
-                })
-                .filter(Boolean)
-              }
+                })}
             </View>
           )}
 
@@ -278,16 +276,14 @@ export default function JobDetailScreen() {
                   return (
                     <View key={key} style={styles.dataRow}>
                       <Text style={[styles.dataKey, { color: theme.textSecondary }]}>
-                        {key}
+                        {key}:
                       </Text>
                       <Text style={[styles.dataValue, { color: theme.text }]}>
                         {displayValue}
                       </Text>
                     </View>
                   );
-                })
-                .filter(Boolean)
-              }
+                })}
             </View>
           )}
 

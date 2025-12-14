@@ -82,8 +82,8 @@ export default function JobsScreen() {
 
 Resume:
 Title: ${primaryResume.title || "Not specified"}
-Skills: ${(primaryResume.skills || []).join(", ") || "Not specified"}
-Experience: ${(primaryResume.experience || []).map(e => `${e.title} at ${e.company}`).join(", ") || "Not specified"}
+Skills: ${Array.isArray(primaryResume.skills) ? primaryResume.skills.join(", ") : "Not specified"}
+Experience: ${Array.isArray(primaryResume.experience) ? primaryResume.experience.map(e => `${e.title} at ${e.company}`).join(", ") : "Not specified"}
 
 Job:
 Title: ${job.title}
