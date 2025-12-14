@@ -245,19 +245,19 @@ export default function JobDetailScreen() {
                     ? JSON.stringify(value, null, 2) 
                     : String(value);
                   
-                  if (!displayValue || displayValue === '') return null;
+                  if (!displayValue || displayValue === '' || displayValue === 'undefined') return null;
                   
                   return (
                     <View key={key} style={styles.dataRow}>
                       <Text style={[styles.dataKey, { color: theme.textSecondary }]}>
-                        {key}:
+                        {String(key)}
                       </Text>
                       <Text style={[styles.dataValue, { color: theme.text }]}>
-                        {displayValue}
+                        {String(displayValue)}
                       </Text>
                     </View>
                   );
-                })}
+                }).filter(Boolean)}
             </View>
           )}
 
@@ -271,19 +271,19 @@ export default function JobDetailScreen() {
                 .filter(([_, value]) => value !== null && value !== undefined && value !== '')
                 .map(([key, value]) => {
                   const displayValue = String(value);
-                  if (!displayValue) return null;
+                  if (!displayValue || displayValue === 'undefined') return null;
                   
                   return (
                     <View key={key} style={styles.dataRow}>
                       <Text style={[styles.dataKey, { color: theme.textSecondary }]}>
-                        {key}:
+                        {String(key)}
                       </Text>
                       <Text style={[styles.dataValue, { color: theme.text }]}>
                         {displayValue}
                       </Text>
                     </View>
                   );
-                })}
+                }).filter(Boolean)}
             </View>
           )}
 
