@@ -240,14 +240,20 @@ export default function JobDetailScreen() {
               {Object.entries(job)
                 .filter(([key]) => key !== 'matchScore' && key !== 'id' && key !== 'updated')
                 .map(([key, value]) => {
-                  if (value === null || value === undefined) return null;
+                  if (value === null || value === undefined || value === '') return null;
+                  const displayValue = typeof value === 'object' 
+                    ? JSON.stringify(value, null, 2) 
+                    : String(value);
+                  
+                  if (!displayValue || displayValue === '') return null;
+                  
                   return (
                     <View key={key} style={styles.dataRow}>
                       <Text style={[styles.dataKey, { color: theme.textSecondary }]}>
-                        {key}:
+                        {key}
                       </Text>
                       <Text style={[styles.dataValue, { color: theme.text }]}>
-                        {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
+                        {displayValue}
                       </Text>
                     </View>
                   );
@@ -263,16 +269,22 @@ export default function JobDetailScreen() {
               </Text>
               {Object.entries(job.rawJobData)
                 .filter(([key]) => key !== 'id' && key !== 'updated')
-                .map(([key, value]) => (
-                  <View key={key} style={styles.dataRow}>
-                    <Text style={[styles.dataKey, { color: theme.textSecondary }]}>
-                      {key}:
-                    </Text>
-                    <Text style={[styles.dataValue, { color: theme.text }]}>
-                      {String(value)}
-                    </Text>
-                  </View>
-                ))}
+                .map(([key, value]) => {
+                  if (value === null || value === undefined || value === '') return null;
+                  const displayValue = String(value);
+                  if (!displayValue) return null;
+                  
+                  return (
+                    <View key={key} style={styles.dataRow}>
+                      <Text style={[styles.dataKey, { color: theme.textSecondary }]}>
+                        {key}
+                      </Text>
+                      <Text style={[styles.dataValue, { color: theme.text }]}>
+                        {displayValue}
+                      </Text>
+                    </View>
+                  );
+                })}
             </View>
           )}
 
