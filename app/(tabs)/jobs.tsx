@@ -81,9 +81,9 @@ export default function JobsScreen() {
                   content: `You are a job matching expert. Compare this resume against the job posting and return ONLY a match score from 0-100.
 
 Resume:
-Title: ${primaryResume.title}
-Skills: ${primaryResume.skills.join(", ")}
-Experience: ${primaryResume.experience.map(e => `${e.title} at ${e.company}`).join(", ")}
+Title: ${primaryResume.title || "Not specified"}
+Skills: ${(primaryResume.skills || []).join(", ") || "Not specified"}
+Experience: ${(primaryResume.experience || []).map(e => `${e.title} at ${e.company}`).join(", ") || "Not specified"}
 
 Job:
 Title: ${job.title}

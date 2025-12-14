@@ -239,8 +239,8 @@ export default function JobDetailScreen() {
               </Text>
               {Object.entries(job)
                 .filter(([key]) => key !== 'matchScore' && key !== 'id' && key !== 'updated')
+                .filter(([_, value]) => value !== null && value !== undefined && value !== '')
                 .map(([key, value]) => {
-                  if (value === null || value === undefined || value === '') return null;
                   const displayValue = typeof value === 'object' 
                     ? JSON.stringify(value, null, 2) 
                     : String(value);
@@ -258,6 +258,7 @@ export default function JobDetailScreen() {
                     </View>
                   );
                 })
+                .filter(Boolean)
               }
             </View>
           )}
@@ -269,8 +270,8 @@ export default function JobDetailScreen() {
               </Text>
               {Object.entries(job.rawJobData)
                 .filter(([key]) => key !== 'id' && key !== 'updated')
+                .filter(([_, value]) => value !== null && value !== undefined && value !== '')
                 .map(([key, value]) => {
-                  if (value === null || value === undefined || value === '') return null;
                   const displayValue = String(value);
                   if (!displayValue) return null;
                   
@@ -284,7 +285,9 @@ export default function JobDetailScreen() {
                       </Text>
                     </View>
                   );
-                })}
+                })
+                .filter(Boolean)
+              }
             </View>
           )}
 
