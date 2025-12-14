@@ -167,9 +167,14 @@ export default function JobsScreen() {
                 );
 
                 return (
-                  <View
+                  <TouchableOpacity
                     key={job.id}
                     style={[styles.jobCard, { backgroundColor: theme.surface }]}
+                    onPress={() => {
+                      console.log("Open job detail:", job.id);
+                      router.push(`/job-detail?id=${job.id}`);
+                    }}
+                    activeOpacity={0.7}
                   >
                     <View style={styles.jobHeader}>
                       <View
@@ -223,16 +228,18 @@ export default function JobsScreen() {
                         <View style={styles.headerActions}>
                           <TouchableOpacity
                             style={styles.iconButton}
-                            onPress={() => {
-                              console.log("Edit job:", job.id);
-                              Alert.alert("Edit Job", "Edit functionality coming soon");
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              console.log("View job:", job.id);
+                              router.push(`/job-detail?id=${job.id}`);
                             }}
                           >
                             <Edit size={16} color={theme.primary} />
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={styles.iconButton}
-                            onPress={() => {
+                            onPress={(e) => {
+                              e.stopPropagation();
                               Alert.alert(
                                 "Delete Job",
                                 "Are you sure you want to delete this job analysis?",
@@ -306,7 +313,7 @@ export default function JobsScreen() {
                         </Text>
                       </View>
                     )}
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
             </View>
@@ -335,19 +342,7 @@ export default function JobsScreen() {
                     key={index}
                     style={[styles.jobCard, { backgroundColor: theme.surface }]}
                     onPress={() => {
-                      Alert.alert(
-                        "Analyze Job",
-                        "Would you like to analyze this job and see your match score?",
-                        [
-                          { text: "Cancel", style: "cancel" },
-                          {
-                            text: "Analyze",
-                            onPress: () => {
-                              console.log("Analyzing online job:", job.title);
-                            },
-                          },
-                        ]
-                      );
+                      router.push(`/job-analyzer?preload=${encodeURIComponent(JSON.stringify(job))}`);
                     }}
                   >
                     <View style={styles.jobHeader}>

@@ -1,12 +1,44 @@
 export type ApplicationStatus = 'saved' | 'applied' | 'interview' | 'offer' | 'rejected';
 
+export interface Experience {
+  title: string;
+  company: string;
+  startDate: string;
+  endDate?: string;
+  description: string;
+}
+
+export interface Education {
+  degree: string;
+  school: string;
+  startDate: string;
+  endDate: string;
+}
+
 export interface Resume {
   id: string;
   title: string;
   tags: string[];
   content: string;
+  experience: Experience[];
+  education: Education[];
+  skills: string[];
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface JoobleJobData {
+  title: string;
+  location: string;
+  snippet: string;
+  salary: string;
+  source: string;
+  type: string;
+  link: string;
+  company: string;
+  updated: string;
+  id: string;
+  [key: string]: unknown;
 }
 
 export interface Job {
@@ -27,6 +59,7 @@ export interface Job {
 
   location?: string;
   url?: string;
+  rawJobData?: JoobleJobData;
 }
 
 export interface Application {

@@ -135,6 +135,7 @@ export default function ResumesScreen() {
                   style={[styles.resumeCard, { backgroundColor: theme.surface }]}
                   onPress={() => {
                     console.log("Open resume:", resume.id);
+                    router.push(`/resume-detail?id=${resume.id}`);
                   }}
                   activeOpacity={0.7}
                 >
@@ -150,16 +151,18 @@ export default function ResumesScreen() {
                     <View style={styles.headerActions}>
                       <TouchableOpacity 
                         style={styles.iconButton}
-                        onPress={() => {
+                        onPress={(e) => {
+                          e.stopPropagation();
                           console.log("Edit resume:", resume.id);
-                          Alert.alert("Edit Resume", "Edit functionality coming soon");
+                          router.push(`/resume-detail?id=${resume.id}`);
                         }}
                       >
                         <Edit size={18} color={theme.primary} />
                       </TouchableOpacity>
                       <TouchableOpacity 
                         style={styles.iconButton}
-                        onPress={() => {
+                        onPress={(e) => {
+                          e.stopPropagation();
                           Alert.alert(
                             "Delete Resume",
                             "Are you sure you want to delete this resume?",

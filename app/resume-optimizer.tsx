@@ -99,16 +99,91 @@ Return ONLY the optimized resume text in plain text format, maintaining the orig
     });
   };
 
+  const saveMutation = useMutation({
+    mutationFn: async (text: string) => {
+      console.log("Parsing resume structure...");
+      
+      const result = await generateText({
+        messages: [
+          {
+            role: "user",
+            content: `Parse this resume and extract structured data. Return ONLY valid JSON in this exact format:
+{
+  "experience": [
+    {
+      "title": "Job Title",
+      "company": "Company Name",
+      "startDate": "MM/YYYY",
+      "endDate": "MM/YYYY or leave empty for current",
+      "description": "Job description"
+    }
+  ],
+  "education": [
+    {
+      "degree": "Degree Name",
+      "school": "School Name",
+      "startDate": "MM/YYYY",
+      "endDate": "MM/YYYY"
+    }
+  ],
+  "skills": ["Skill 1", "Skill 2", "Skill 3"]
+}
+
+Resume:
+${text}
+
+Return ONLY the JSON object, no other text.`,
+          },
+        ],
+      });
+
+      let parsed;
+      try {
+        const jsonMatch = result.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[0]);
+        } else {
+          parsed = JSON.parse(result);
+        }
+      } catch {
+        parsed = {
+          experience: [],
+          education: [],
+          skills: [],
+        };
+      }
+
+      return parsed;
+    },
+    onSuccess: (structuredData) => {
+      console.log("Resume parsed successfully");
+      addResume({
+        title: `Resume ${new Date().toLocaleDateString()}`,
+        content: optimizedText,
+        tags: mode === "ats" ? ["ATS-Optimized"] : ["AI-Enhanced"],
+        experience: structuredData.experience || [],
+        education: structuredData.education || [],
+        skills: structuredData.skills || [],
+      });
+      router.back();
+    },
+    onError: (error) => {
+      console.error("Failed to parse resume:", error);
+      addResume({
+        title: `Resume ${new Date().toLocaleDateString()}`,
+        content: optimizedText,
+        tags: mode === "ats" ? ["ATS-Optimized"] : ["AI-Enhanced"],
+        experience: [],
+        education: [],
+        skills: [],
+      });
+      router.back();
+    },
+  });
+
   const handleSave = () => {
     if (!optimizedText) return;
-
-    addResume({
-      title: `Resume ${new Date().toLocaleDateString()}`,
-      content: optimizedText,
-      tags: mode === "ats" ? ["ATS-Optimized"] : ["AI-Enhanced"],
-    });
-
-    router.back();
+    saveMutation.mutate(optimizedText);
   };
 
   return (
@@ -249,11 +324,21 @@ Return ONLY the optimized resume text in plain text format, maintaining the orig
 
               <View style={styles.actionButtons}>
                 <TouchableOpacity
-                  style={[styles.saveButton, { backgroundColor: theme.success }]}
+                  style={[styles.saveButton, { backgroundColor: saveMutation.isPending ? theme.textSecondary : theme.success }]}
                   onPress={handleSave}
+                  disabled={saveMutation.isPending}
                 >
-                  <CheckCircle2 size={20} color="white" />
-                  <Text style={styles.saveButtonText}>Save Resume</Text>
+                  {saveMutation.isPending ? (
+                    <>
+                      <ActivityIndicator color="white" size="small" />
+                      <Text style={styles.saveButtonText}>Parsing...</Text>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={20} color="white" />
+                      <Text style={styles.saveButtonText}>Save Resume</Text>
+                    </>
+                  )}
                 </TouchableOpacity>
               </View>
             </View>
