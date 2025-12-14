@@ -88,15 +88,15 @@ export default function JobDetailScreen() {
               </View>
             </View>
 
-            {job.matchScore && (
+            {typeof (job as any).matchScore === "number" ? (
               <View
                 style={[
                   styles.matchBadge,
                   {
                     backgroundColor:
-                      job.matchScore >= 70
+                      (job as any).matchScore >= 70
                         ? theme.success + "20"
-                        : job.matchScore >= 40
+                        : (job as any).matchScore >= 40
                         ? theme.warning + "20"
                         : theme.error + "20",
                   },
@@ -105,9 +105,9 @@ export default function JobDetailScreen() {
                 <TrendingUp
                   size={16}
                   color={
-                    job.matchScore >= 70
+                    (job as any).matchScore >= 70
                       ? theme.success
-                      : job.matchScore >= 40
+                      : (job as any).matchScore >= 40
                       ? theme.warning
                       : theme.error
                   }
@@ -117,18 +117,18 @@ export default function JobDetailScreen() {
                     styles.matchText,
                     {
                       color:
-                        job.matchScore >= 70
+                        (job as any).matchScore >= 70
                           ? theme.success
-                          : job.matchScore >= 40
+                          : (job as any).matchScore >= 40
                           ? theme.warning
                           : theme.error,
                     },
                   ]}
                 >
-                  {job.matchScore}% Match
+                  {(job as any).matchScore}% Match
                 </Text>
               </View>
-            )}
+            ) : null}
 
             {(job.location || job.rawJobData?.location) && (
               <View style={styles.metaRow}>
