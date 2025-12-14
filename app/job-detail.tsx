@@ -12,7 +12,6 @@ import { useLocalSearchParams, Stack } from "expo-router";
 import {
   Briefcase,
   MapPin,
-  Calendar,
   DollarSign,
   ExternalLink,
   FileText,
@@ -158,14 +157,7 @@ export default function JobDetailScreen() {
               </View>
             )}
 
-            {(job.rawJobData?.updated || job.createdAt) && (
-              <View style={styles.metaRow}>
-                <Calendar size={16} color={theme.textSecondary} />
-                <Text style={[styles.metaText, { color: theme.textSecondary }]}>
-                  Posted: {job.rawJobData?.updated || (typeof job.createdAt === 'string' ? job.createdAt : job.createdAt?.toLocaleDateString?.() || 'N/A')}
-                </Text>
-              </View>
-            )}
+
 
             {job.rawJobData?.source && (
               <View style={styles.metaRow}>
@@ -177,20 +169,11 @@ export default function JobDetailScreen() {
             )}
           </View>
 
-          {job.description && (
+          {(job.description || job.rawJobData?.snippet) && (
             <View style={[styles.section, { backgroundColor: theme.surface }]}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Description</Text>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Job Description</Text>
               <Text style={[styles.sectionContent, { color: theme.text }]}>
-                {job.description}
-              </Text>
-            </View>
-          )}
-
-          {job.rawJobData?.snippet && (
-            <View style={[styles.section, { backgroundColor: theme.surface }]}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Summary</Text>
-              <Text style={[styles.sectionContent, { color: theme.text }]}>
-                {job.rawJobData.snippet}
+                {job.description || job.rawJobData?.snippet}
               </Text>
             </View>
           )}
@@ -255,7 +238,7 @@ export default function JobDetailScreen() {
                 Full Job Information
               </Text>
               {Object.entries(job)
-                .filter(([key]) => key !== 'matchScore')
+                .filter(([key]) => key !== 'matchScore' && key !== 'id' && key !== 'updated')
                 .map(([key, value]) => {
                   if (value === null || value === undefined) return null;
                   return (
@@ -278,16 +261,18 @@ export default function JobDetailScreen() {
               <Text style={[styles.sectionTitle, { color: theme.text }]}>
                 Full API Data
               </Text>
-              {Object.entries(job.rawJobData).map(([key, value]) => (
-                <View key={key} style={styles.dataRow}>
-                  <Text style={[styles.dataKey, { color: theme.textSecondary }]}>
-                    {key}:
-                  </Text>
-                  <Text style={[styles.dataValue, { color: theme.text }]}>
-                    {String(value)}
-                  </Text>
-                </View>
-              ))}
+              {Object.entries(job.rawJobData)
+                .filter(([key]) => key !== 'id' && key !== 'updated')
+                .map(([key, value]) => (
+                  <View key={key} style={styles.dataRow}>
+                    <Text style={[styles.dataKey, { color: theme.textSecondary }]}>
+                      {key}:
+                    </Text>
+                    <Text style={[styles.dataValue, { color: theme.text }]}>
+                      {String(value)}
+                    </Text>
+                  </View>
+                ))}
             </View>
           )}
 
