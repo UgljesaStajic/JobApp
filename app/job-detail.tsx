@@ -1,13 +1,11 @@
-import React, { useState } from "react";
+import React from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
   Linking,
-  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, Stack } from "expo-router";
@@ -19,106 +17,29 @@ import {
   ExternalLink,
   FileText,
   TrendingUp,
-  Award,
-  X,
 } from "lucide-react-native";
-import { useMutation } from "@tanstack/react-query";
-import { generateText } from "@rork-ai/toolkit-sdk";
 
 import { typography } from "@/constants/typography";
 import { useApp } from "@/context/AppContext";
 import { useTheme } from "@/hooks/useTheme";
 
-interface ComparisonResult {
-  matchScore: number;
-  matchedSkills: string[];
-  missingSkills: string[];
-  strengths: string[];
-  recommendations: string[];
-}
-
 export default function JobDetailScreen() {
   const { theme } = useTheme();
   const { id, online } = useLocalSearchParams<{ id?: string; online?: string }>();
   const { state } = useApp();
-  const [showCompareModal, setShowCompareModal] = useState(false);
-  const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null);
   
   let job = state.jobs.find((j) => j.id === id);
+  let isOnlineJob = false;
   
   if (!job && online) {
     try {
       const onlineJob = JSON.parse(decodeURIComponent(online));
       job = onlineJob;
+      isOnlineJob = true;
     } catch (error) {
       console.error("Failed to parse online job:", error);
     }
   }
-
-  const compareMutation = useMutation({
-    mutationFn: async ({ resumeId }: { resumeId: string }) => {
-      console.log("Comparing resume with job...");
-      const resume = state.resumes.find((r) => r.id === resumeId);
-      if (!resume || !job) throw new Error("Resume or job not found");
-
-      const result = await generateText({
-        messages: [
-          {
-            role: "user",
-            content: `You are an expert career advisor. Compare this resume against the job posting and provide a detailed analysis.
-
-Resume:
-Title: ${resume.title}
-Skills: ${resume.skills.join(", ")}
-Experience: ${resume.experience.map(e => `${e.title} at ${e.company}: ${e.description}`).join("\n")}
-Education: ${resume.education.map(e => `${e.degree} from ${e.school}`).join("\n")}
-
-Job Posting:
-Title: ${job.title}
-Company: ${job.company}
-Description: ${job.description || job.rawJobData?.snippet || "N/A"}
-Required Skills: ${job.mustHaveSkills?.join(", ") || "N/A"}
-Nice to Have: ${job.niceToHave?.join(", ") || "N/A"}
-Responsibilities: ${job.responsibilities?.join(", ") || "N/A"}
-
-Analyze the match and return ONLY valid JSON in this exact format:
-{
-  "matchScore": 85,
-  "matchedSkills": ["Skill 1", "Skill 2"],
-  "missingSkills": ["Skill 3", "Skill 4"],
-  "strengths": ["Strength 1", "Strength 2"],
-  "recommendations": ["Recommendation 1", "Recommendation 2"]
-}
-
-Be honest and specific. Return ONLY the JSON object, no other text.`,
-          },
-        ],
-      });
-
-      try {
-        const jsonMatch = result.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          return JSON.parse(jsonMatch[0]) as ComparisonResult;
-        }
-        return JSON.parse(result) as ComparisonResult;
-      } catch {
-        return {
-          matchScore: 0,
-          matchedSkills: [],
-          missingSkills: [],
-          strengths: [],
-          recommendations: [],
-        };
-      }
-    },
-    onSuccess: (data) => {
-      console.log("Comparison complete");
-      setComparisonResult(data);
-    },
-    onError: (error) => {
-      console.error("Comparison failed:", error);
-    },
-  });
 
   if (!job) {
     return (
@@ -133,8 +54,9 @@ Be honest and specific. Return ONLY the JSON object, no other text.`,
   }
 
   const openLink = () => {
-    if (job.url || job.rawJobData?.link) {
-      Linking.openURL(job.url || job.rawJobData?.link || "");
+    const url = job.url || job.rawJobData?.link || (job as any).link;
+    if (url) {
+      Linking.openURL(url);
     }
   };
 
@@ -327,7 +249,31 @@ Be honest and specific. Return ONLY the JSON object, no other text.`,
             </View>
           )}
 
-          {job.rawJobData && (
+          {isOnlineJob && job && (
+            <View style={[styles.section, { backgroundColor: theme.surface }]}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>
+                Full Job Information
+              </Text>
+              {Object.entries(job)
+                .filter(([key]) => key !== 'matchScore')
+                .map(([key, value]) => {
+                  if (value === null || value === undefined) return null;
+                  return (
+                    <View key={key} style={styles.dataRow}>
+                      <Text style={[styles.dataKey, { color: theme.textSecondary }]}>
+                        {key}:
+                      </Text>
+                      <Text style={[styles.dataValue, { color: theme.text }]}>
+                        {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
+                      </Text>
+                    </View>
+                  );
+                })
+              }
+            </View>
+          )}
+
+          {!isOnlineJob && job.rawJobData && (
             <View style={[styles.section, { backgroundColor: theme.surface }]}>
               <Text style={[styles.sectionTitle, { color: theme.text }]}>
                 Full API Data
@@ -345,180 +291,18 @@ Be honest and specific. Return ONLY the JSON object, no other text.`,
             </View>
           )}
 
-          <View style={styles.actions}>
-            {(job.url || job.rawJobData?.link) && (
+          {(job.url || job.rawJobData?.link || (job as any).link) && (
+            <View style={styles.actions}>
               <TouchableOpacity
                 style={[styles.actionButton, { backgroundColor: theme.primary }]}
                 onPress={openLink}
               >
                 <ExternalLink size={20} color="white" />
-                <Text style={styles.actionButtonText}>View Original</Text>
+                <Text style={styles.actionButtonText}>View Original Job Posting</Text>
               </TouchableOpacity>
-            )}
-
-            <TouchableOpacity
-              style={[
-                styles.actionButton,
-                { backgroundColor: theme.accent, opacity: state.resumes.length === 0 ? 0.5 : 1 },
-              ]}
-              onPress={() => setShowCompareModal(true)}
-              disabled={state.resumes.length === 0}
-            >
-              <Award size={20} color="white" />
-              <Text style={styles.actionButtonText}>Compare with Resume</Text>
-            </TouchableOpacity>
-          </View>
+            </View>
+          )}
         </ScrollView>
-
-        <Modal
-          visible={showCompareModal}
-          animationType="slide"
-          presentationStyle="pageSheet"
-          onRequestClose={() => {
-            setShowCompareModal(false);
-            setComparisonResult(null);
-          }}
-        >
-          <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
-            <SafeAreaView style={styles.modalSafe}>
-              <View style={styles.modalHeader}>
-                <Text style={[styles.modalTitle, { color: theme.text }]}>
-                  Compare Resume
-                </Text>
-                <TouchableOpacity
-                  style={styles.closeButton}
-                  onPress={() => {
-                    setShowCompareModal(false);
-                    setComparisonResult(null);
-                  }}
-                >
-                  <X size={24} color={theme.text} />
-                </TouchableOpacity>
-              </View>
-
-              {!comparisonResult ? (
-                <ScrollView style={styles.modalContent}>
-                  <Text style={[styles.selectLabel, { color: theme.text }]}>
-                    Select a resume to compare:
-                  </Text>
-                  {state.resumes.map((resume) => (
-                    <TouchableOpacity
-                      key={resume.id}
-                      style={[
-                        styles.resumeOption,
-                        { backgroundColor: theme.surface, borderColor: theme.border },
-                      ]}
-                      onPress={() => {
-                        compareMutation.mutate({ resumeId: resume.id });
-                      }}
-                      disabled={compareMutation.isPending}
-                    >
-                      <FileText size={20} color={theme.primary} />
-                      <Text style={[styles.resumeOptionText, { color: theme.text }]}>
-                        {resume.title}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-
-                  {compareMutation.isPending && (
-                    <View style={styles.loadingContainer}>
-                      <ActivityIndicator size="large" color={theme.primary} />
-                      <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-                        Analyzing match...
-                      </Text>
-                    </View>
-                  )}
-                </ScrollView>
-              ) : (
-                <ScrollView style={styles.modalContent}>
-                  <View style={[styles.resultCard, { backgroundColor: theme.surface }]}>
-                    <View
-                      style={[
-                        styles.scoreCircle,
-                        {
-                          backgroundColor:
-                            comparisonResult.matchScore >= 70
-                              ? theme.success + "20"
-                              : comparisonResult.matchScore >= 40
-                              ? theme.warning + "20"
-                              : theme.error + "20",
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.scoreText,
-                          {
-                            color:
-                              comparisonResult.matchScore >= 70
-                                ? theme.success
-                                : comparisonResult.matchScore >= 40
-                                ? theme.warning
-                                : theme.error,
-                          },
-                        ]}
-                      >
-                        {comparisonResult.matchScore}%
-                      </Text>
-                    </View>
-                  </View>
-
-                  {comparisonResult.matchedSkills.length > 0 && (
-                    <View style={[styles.resultSection, { backgroundColor: theme.surface }]}>
-                      <Text style={[styles.resultTitle, { color: theme.success }]}>
-                        ✓ Matched Skills
-                      </Text>
-                      {comparisonResult.matchedSkills.map((skill, index) => (
-                        <Text key={index} style={[styles.resultItem, { color: theme.text }]}>
-                          • {skill}
-                        </Text>
-                      ))}
-                    </View>
-                  )}
-
-                  {comparisonResult.missingSkills.length > 0 && (
-                    <View style={[styles.resultSection, { backgroundColor: theme.surface }]}>
-                      <Text style={[styles.resultTitle, { color: theme.error }]}>
-                        ✗ Missing Skills
-                      </Text>
-                      {comparisonResult.missingSkills.map((skill, index) => (
-                        <Text key={index} style={[styles.resultItem, { color: theme.text }]}>
-                          • {skill}
-                        </Text>
-                      ))}
-                    </View>
-                  )}
-
-                  {comparisonResult.strengths.length > 0 && (
-                    <View style={[styles.resultSection, { backgroundColor: theme.surface }]}>
-                      <Text style={[styles.resultTitle, { color: theme.primary }]}>
-                        ★ Your Strengths
-                      </Text>
-                      {comparisonResult.strengths.map((strength, index) => (
-                        <Text key={index} style={[styles.resultItem, { color: theme.text }]}>
-                          • {strength}
-                        </Text>
-                      ))}
-                    </View>
-                  )}
-
-                  {comparisonResult.recommendations.length > 0 && (
-                    <View style={[styles.resultSection, { backgroundColor: theme.surface }]}>
-                      <Text style={[styles.resultTitle, { color: theme.accent }]}>
-                        💡 Recommendations
-                      </Text>
-                      {comparisonResult.recommendations.map((rec, index) => (
-                        <Text key={index} style={[styles.resultItem, { color: theme.text }]}>
-                          • {rec}
-                        </Text>
-                      ))}
-                    </View>
-                  )}
-                </ScrollView>
-              )}
-            </SafeAreaView>
-          </View>
-        </Modal>
       </SafeAreaView>
     </View>
   );
