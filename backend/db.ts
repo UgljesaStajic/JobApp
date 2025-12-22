@@ -1,15 +1,23 @@
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_KEY || '';
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_KEY || '';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY || '';
 
-if (!supabaseUrl || !supabaseKey) {
+if (!supabaseUrl || !supabaseAnonKey) {
   console.error('[DB] ⚠️ CRITICAL: Missing Supabase configuration!');
   console.error('[DB] SUPABASE_URL:', supabaseUrl ? '✓ Set' : '✗ Missing');
-  console.error('[DB] SUPABASE_KEY:', supabaseKey ? '✓ Set (hidden)' : '✗ Missing');
+  console.error('[DB] SUPABASE_ANON_KEY:', supabaseAnonKey ? '✓ Set (hidden)' : '✗ Missing');
+  console.error('[DB] SUPABASE_SERVICE_KEY:', supabaseServiceKey ? '✓ Set (hidden)' : '✗ Missing');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey || supabaseAnonKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  }
+});
 
 interface DbRecord {
   id: string;
@@ -55,10 +63,11 @@ function transformKeysToCamelCase(obj: any): any {
 }
 
 export const db = {
-  async get<T = any>(collection: string, id: string): Promise<T | null> {
+  async get<T = any>(collection: string, id: string, useServiceRole = false): Promise<T | null> {
     console.log(`[DB] 🔍 GET ${collection}/${id}`);
     
-    const { data, error } = await supabase
+    const client = useServiceRole ? supabaseAdmin : supabase;
+    const { data, error } = await client
       .from(collection)
       .select('*')
       .eq('id', id)
@@ -77,12 +86,13 @@ export const db = {
     return transformKeysToCamelCase(data) as T;
   },
 
-  async set<T extends DbRecord>(collection: string, id: string, data: T): Promise<T> {
-    console.log(`[DB] 💾 SET ${collection}/${id}`);
+  async set<T extends DbRecord>(collection: string, id: string, data: T, useServiceRole = false): Promise<T> {
+    console.log(`[DB] 💾 SET ${collection}/${id}${useServiceRole ? ' (service role)' : ''}`);
     
     const snakeCaseData = transformKeysToSnakeCase({ ...data, id });
     
-    const { error } = await supabase
+    const client = useServiceRole ? supabaseAdmin : supabase;
+    const { error } = await client
       .from(collection)
       .upsert(snakeCaseData, { onConflict: 'id' });
     
@@ -95,10 +105,11 @@ export const db = {
     return data;
   },
 
-  async delete(collection: string, id: string): Promise<boolean> {
+  async delete(collection: string, id: string, useServiceRole = false): Promise<boolean> {
     console.log(`[DB] 🗑️ DELETE ${collection}/${id}`);
     
-    const { error } = await supabase
+    const client = useServiceRole ? supabaseAdmin : supabase;
+    const { error } = await client
       .from(collection)
       .delete()
       .eq('id', id);
@@ -112,10 +123,11 @@ export const db = {
     return true;
   },
 
-  async list<T = any>(collection: string): Promise<T[]> {
+  async list<T = any>(collection: string, useServiceRole = false): Promise<T[]> {
     console.log(`[DB] 📋 LIST ${collection}`);
     
-    const { data, error } = await supabase
+    const client = useServiceRole ? supabaseAdmin : supabase;
+    const { data, error } = await client
       .from(collection)
       .select('*');
     

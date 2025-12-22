@@ -78,9 +78,15 @@ export const authRouter = createTRPCRouter({
       }
 
       const userId = authData.user.id;
-      const user = createDefaultUser(userId, emailRaw, input.name);
-
-      await db.set("users", userId, user);
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      let user = await db.get<UserData>("users", userId, true);
+      
+      if (!user) {
+        user = createDefaultUser(userId, emailRaw, input.name);
+        await db.set("users", userId, user, true);
+      }
 
       console.log(`[Auth] Registered successfully: ${userId}`);
 
@@ -126,12 +132,12 @@ export const authRouter = createTRPCRouter({
       }
 
       const userId = authData.user.id;
-      let user = await db.get<UserData>("users", userId);
+      let user = await db.get<UserData>("users", userId, true);
 
       if (!user) {
         const name = authData.user.user_metadata?.name || emailRaw.split("@")[0];
         user = createDefaultUser(userId, emailRaw, name);
-        await db.set("users", userId, user);
+        await db.set("users", userId, user, true);
       }
 
       console.log(`[Auth] Login successful: ${user.id}`);
@@ -179,11 +185,11 @@ export const authRouter = createTRPCRouter({
       }
 
       const userId = authData.user.id;
-      let user = await db.get<UserData>("users", userId);
+      let user = await db.get<UserData>("users", userId, true);
 
       if (!user) {
         user = createDefaultUser(userId, emailRaw, input.name);
-        await db.set("users", userId, user);
+        await db.set("users", userId, user, true);
       }
 
       return {
@@ -209,7 +215,7 @@ export const authRouter = createTRPCRouter({
         throw new TRPCError({ code: "UNAUTHORIZED", message: "Session expired" });
       }
 
-      const user = await db.get<UserData>("users", userData.user.id);
+      const user = await db.get<UserData>("users", userData.user.id, true);
       if (!user) {
         throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
       }
