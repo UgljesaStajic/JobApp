@@ -16,6 +16,44 @@ interface DbRecord {
   [key: string]: any;
 }
 
+function toSnakeCase(str: string): string {
+  return str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+}
+
+function toCamelCase(str: string): string {
+  return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+}
+
+function transformKeysToSnakeCase(obj: any): any {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(transformKeysToSnakeCase);
+  
+  const transformed: any = {};
+  for (const key in obj) {
+    if (obj.hasOwnProperty(key)) {
+      const snakeKey = toSnakeCase(key);
+      transformed[snakeKey] = transformKeysToSnakeCase(obj[key]);
+    }
+  }
+  return transformed;
+}
+
+function transformKeysToCamelCase(obj: any): any {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(transformKeysToCamelCase);
+  
+  const transformed: any = {};
+  for (const key in obj) {
+    if (obj.hasOwnProperty(key)) {
+      const camelKey = toCamelCase(key);
+      transformed[camelKey] = transformKeysToCamelCase(obj[key]);
+    }
+  }
+  return transformed;
+}
+
 export const db = {
   async get<T = any>(collection: string, id: string): Promise<T | null> {
     console.log(`[DB] 🔍 GET ${collection}/${id}`);
@@ -36,15 +74,17 @@ export const db = {
     }
     
     console.log(`[DB] ✓ Found ${collection}/${id}`);
-    return data as T;
+    return transformKeysToCamelCase(data) as T;
   },
 
   async set<T extends DbRecord>(collection: string, id: string, data: T): Promise<T> {
     console.log(`[DB] 💾 SET ${collection}/${id}`);
     
+    const snakeCaseData = transformKeysToSnakeCase({ ...data, id });
+    
     const { error } = await supabase
       .from(collection)
-      .upsert({ ...data, id }, { onConflict: 'id' });
+      .upsert(snakeCaseData, { onConflict: 'id' });
     
     if (error) {
       console.error(`[DB] ⚠️ Error setting ${collection}/${id}:`, error);
@@ -85,6 +125,6 @@ export const db = {
     }
     
     console.log(`[DB] ✓ Listed ${collection}: ${data?.length || 0} items`);
-    return (data as T[]) || [];
+    return (data || []).map(transformKeysToCamelCase) as T[];
   },
 };
