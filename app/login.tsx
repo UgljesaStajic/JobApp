@@ -3,20 +3,18 @@ import {
   View,
   Text,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Alert,
   StatusBar,
   Pressable,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { Mail, Lock, User, Eye, EyeOff, ArrowRight, AlertCircle } from "lucide-react-native";
-import * as Google from "expo-auth-session/providers/google";
+import { ArrowRight, AlertCircle } from "lucide-react-native";
+import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
 
 import { useApp } from "@/context/AppContext";
@@ -24,6 +22,9 @@ import { useTheme } from "@/hooks/useTheme";
 import { trpc } from "@/lib/trpc";
 
 WebBrowser.maybeCompleteAuthSession();
+
+const auth0Domain = process.env.EXPO_PUBLIC_AUTH0_DOMAIN!;
+const auth0ClientId = process.env.EXPO_PUBLIC_AUTH0_CLIENT_ID!;
 
 // Unused import removed
 
@@ -33,105 +34,74 @@ export default function LoginScreen() {
   const { theme } = useTheme();
   
   const [isRegistering, setIsRegistering] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  
-  // Status states
   const [formError, setFormError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   
-  const registerMutation = trpc.auth.register.useMutation();
-  const loginMutation = trpc.auth.login.useMutation();
-  const googleAuthMutation = trpc.auth.googleAuth.useMutation();
-  
-  const isLoading = registerMutation.isPending || loginMutation.isPending || googleAuthMutation.isPending;
+  const auth0AuthMutation = trpc.auth.auth0Login.useMutation();
 
-  const [, response, promptAsync] = Google.useAuthRequest({
-    clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
+  const redirectUri = AuthSession.makeRedirectUri({
+    scheme: 'exp',
+    ...(Platform.OS === 'web' ? {} : { native: 'exp://redirect' })
   });
 
-  const handleGoogleAuthResponse = React.useCallback(async (idToken: string) => {
+  const [request, result, promptAsync] = AuthSession.useAuthRequest(
+    {
+      redirectUri,
+      clientId: auth0ClientId,
+      responseType: AuthSession.ResponseType.Code,
+      scopes: ['openid', 'profile', 'email'],
+      extraParams: {
+        screen_hint: isRegistering ? 'signup' : 'login',
+      },
+    },
+    {
+      authorizationEndpoint: `https://${auth0Domain}/authorize`,
+    }
+  );
+
+  const handleAuth0Response = React.useCallback(async (code: string) => {
     try {
+      setIsLoading(true);
       setFormError(null);
-      // Basic decoding to get user info for optimistic UI or logs
-      const parts = idToken.split(".");
-      const payload = JSON.parse(atob(parts[1]));
       
-      const result = await googleAuthMutation.mutateAsync({
-        idToken,
-        email: payload.email,
-        name: payload.name || payload.email.split("@")[0],
+      const result = await auth0AuthMutation.mutateAsync({
+        code,
+        redirectUri,
       });
       
       login(result.user as any, result.sessionToken);
       router.replace("/(tabs)");
     } catch (error: any) {
-      console.error("Google auth error:", error);
-      setFormError(error.message || "Failed to sign in with Google.");
+      console.error("Auth0 auth error:", error);
+      setFormError(error.message || "Failed to authenticate with Auth0.");
+    } finally {
+      setIsLoading(false);
     }
-  }, [googleAuthMutation, login, router]);
+  }, [auth0AuthMutation, login, router, redirectUri]);
 
   useEffect(() => {
-    if (response?.type === "success") {
-      const { authentication } = response;
-      if (authentication?.idToken) {
-        handleGoogleAuthResponse(authentication.idToken);
-      }
+    if (result?.type === "success" && result.params.code) {
+      handleAuth0Response(result.params.code);
+    } else if (result?.type === "error") {
+      setFormError(result.error?.message || "Authentication failed");
     }
-  }, [response, handleGoogleAuthResponse]);
-
-  const validateForm = () => {
-    setFormError(null);
-    
-    if (!email.trim() || !password) {
-      setFormError("Please fill in all required fields.");
-      return false;
-    }
-    
-    if (isRegistering && !name.trim()) {
-      setFormError("Please enter your name.");
-      return false;
-    }
-    
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email.trim())) {
-      setFormError("Please enter a valid email address.");
-      return false;
-    }
-    
-    if (password.length < 8) {
-      setFormError("Password must be at least 8 characters long.");
-      return false;
-    }
-    
-    return true;
-  };
+  }, [result, handleAuth0Response]);
 
   const handleSubmit = async () => {
-    if (!validateForm()) return;
-
+    setFormError(null);
+    if (!request) {
+      setFormError("Authentication not ready. Please try again.");
+      return;
+    }
+    
     try {
-      if (isRegistering) {
-        const result = await registerMutation.mutateAsync({
-          email: email.trim(),
-          password,
-          name: name.trim(),
-        });
-        login(result.user as any, result.sessionToken);
-      } else {
-        const result = await loginMutation.mutateAsync({
-          email: email.trim(),
-          password,
-        });
-        login(result.user as any, result.sessionToken);
-      }
-      
-      // Navigate after successful login
-      router.replace("/(tabs)");
+      setIsLoading(true);
+      await promptAsync();
     } catch (error: any) {
       console.error("Auth error:", error);
       setFormError(error.message || "Authentication failed. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -208,104 +178,29 @@ export default function LoginScreen() {
             </View>
           )}
 
-          {isRegistering && (
-            <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: theme.textSecondary }]}>Full Name</Text>
-              <View style={[styles.inputWrapper, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <User size={20} color={theme.textSecondary} style={styles.inputIcon} />
-                <TextInput
-                  style={[styles.input, { color: theme.text }]}
-                  placeholder="John Doe"
-                  placeholderTextColor={theme.textSecondary + '80'}
-                  value={name}
-                  onChangeText={setName}
-                  autoCapitalize="words"
-                />
-              </View>
-            </View>
-          )}
-
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: theme.textSecondary }]}>Email Address</Text>
-            <View style={[styles.inputWrapper, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Mail size={20} color={theme.textSecondary} style={styles.inputIcon} />
-              <TextInput
-                style={[styles.input, { color: theme.text }]}
-                placeholder="you@example.com"
-                placeholderTextColor={theme.textSecondary + '80'}
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
+          <View style={styles.infoContainer}>
+            <Text style={[styles.infoText, { color: theme.textSecondary }]}>
+              {isRegistering 
+                ? "Create your account securely with Auth0. Click the button below to get started."
+                : "Sign in securely with Auth0. Click the button below to continue."}
+            </Text>
           </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: theme.textSecondary }]}>Password</Text>
-            <View style={[styles.inputWrapper, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Lock size={20} color={theme.textSecondary} style={styles.inputIcon} />
-              <TextInput
-                style={[styles.input, { color: theme.text }]}
-                placeholder="••••••••"
-                placeholderTextColor={theme.textSecondary + '80'}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-              />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
-                {showPassword ? (
-                  <EyeOff size={20} color={theme.textSecondary} />
-                ) : (
-                  <Eye size={20} color={theme.textSecondary} />
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {!isRegistering && (
-            <TouchableOpacity 
-              style={styles.forgotPassword}
-              onPress={() => Alert.alert("Reset Password", "Password reset instructions sent to your email.")}
-            >
-              <Text style={[styles.forgotPasswordText, { color: theme.primary }]}>Forgot Password?</Text>
-            </TouchableOpacity>
-          )}
 
           <TouchableOpacity
-            style={[styles.submitButton, { backgroundColor: theme.primary, opacity: isLoading ? 0.7 : 1 }]}
+            style={[styles.submitButton, { backgroundColor: theme.primary, opacity: isLoading || !request ? 0.7 : 1 }]}
             onPress={handleSubmit}
-            disabled={isLoading}
+            disabled={isLoading || !request}
           >
             {isLoading ? (
               <ActivityIndicator color="white" />
             ) : (
               <View style={styles.submitContent}>
                 <Text style={styles.submitButtonText}>
-                  {isRegistering ? "Create Account" : "Sign In"}
+                  {isRegistering ? "Create Account with Auth0" : "Sign In with Auth0"}
                 </Text>
                 <ArrowRight size={20} color="white" style={{ marginLeft: 8 }} />
               </View>
             )}
-          </TouchableOpacity>
-
-          <View style={styles.divider}>
-            <View style={[styles.line, { backgroundColor: theme.border }]} />
-            <Text style={[styles.dividerText, { color: theme.textSecondary }]}>Or continue with</Text>
-            <View style={[styles.line, { backgroundColor: theme.border }]} />
-          </View>
-
-          <TouchableOpacity
-            style={[styles.socialButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
-            onPress={() => promptAsync()}
-            disabled={isLoading}
-          >
-            <View style={styles.socialIconPlaceholder}>
-              <Text style={{ fontSize: 18, fontWeight: 'bold', color: theme.text }}>G</Text>
-            </View>
-            <Text style={[styles.socialButtonText, { color: theme.text }]}>Google</Text>
           </TouchableOpacity>
         </View>
 
@@ -401,42 +296,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     flex: 1,
   },
-  inputGroup: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 8,
-    marginLeft: 4,
-  },
-  inputWrapper: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderRadius: 16,
-    height: 56,
-    paddingHorizontal: 16,
-  },
-  inputIcon: {
-    marginRight: 12,
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    height: "100%",
-  },
-  eyeIcon: {
-    padding: 8,
-  },
-  forgotPassword: {
-    alignSelf: "flex-end",
+  infoContainer: {
+    padding: 16,
+    borderRadius: 12,
     marginBottom: 24,
-    marginTop: -8,
   },
-  forgotPasswordText: {
-    fontSize: 14,
-    fontWeight: "600",
+  infoText: {
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: "center",
   },
   submitButton: {
     height: 56,

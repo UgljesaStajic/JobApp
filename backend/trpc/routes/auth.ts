@@ -70,6 +70,60 @@ function createDefaultUser(id: string, email: string, name: string, passwordHash
   };
 }
 
+async function exchangeAuth0Code(code: string, redirectUri: string) {
+  const auth0Domain = process.env.EXPO_PUBLIC_AUTH0_DOMAIN;
+  const clientId = process.env.EXPO_PUBLIC_AUTH0_CLIENT_ID;
+  const clientSecret = process.env.AUTH0_CLIENT_SECRET;
+
+  if (!auth0Domain || !clientId || !clientSecret) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Auth0 configuration missing",
+    });
+  }
+
+  const tokenResponse = await fetch(`https://${auth0Domain}/oauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      grant_type: "authorization_code",
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+      redirect_uri: redirectUri,
+    }),
+  });
+
+  if (!tokenResponse.ok) {
+    const error = await tokenResponse.text();
+    console.error("Auth0 token exchange failed:", error);
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Failed to exchange authorization code",
+    });
+  }
+
+  const tokens = await tokenResponse.json();
+  
+  const userInfoResponse = await fetch(`https://${auth0Domain}/userinfo`, {
+    headers: { Authorization: `Bearer ${tokens.access_token}` },
+  });
+
+  if (!userInfoResponse.ok) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Failed to fetch user info",
+    });
+  }
+
+  const userInfo = await userInfoResponse.json();
+  return {
+    email: userInfo.email,
+    name: userInfo.name || userInfo.email.split("@")[0],
+    sub: userInfo.sub,
+  };
+}
+
 export const authRouter = createTRPCRouter({
   register: publicProcedure
     .input(z.object({
@@ -265,5 +319,53 @@ export const authRouter = createTRPCRouter({
     .mutation(async ({ input }) => {
       await db.delete("sessions", input.sessionToken);
       return { success: true };
+    }),
+
+  auth0Login: publicProcedure
+    .input(z.object({
+      code: z.string(),
+      redirectUri: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      console.log(`[Auth] Auth0 login with code`);
+      
+      const userInfo = await exchangeAuth0Code(input.code, input.redirectUri);
+      const emailRaw = sanitizeEmail(userInfo.email);
+
+      let mapping = await db.get<EmailMapping>("user_emails", emailRaw);
+      let user: UserData | null = null;
+
+      if (mapping) {
+        user = await db.get<UserData>("users", mapping.userId);
+      }
+
+      if (!user) {
+        const userId = generateId("user");
+        user = createDefaultUser(userId, emailRaw, userInfo.name, "");
+        
+        await db.set("users", userId, user);
+        await db.set("user_emails", emailRaw, { id: emailRaw, userId });
+      }
+
+      const sessionToken = generateId("sess");
+      const session: SessionData = {
+        id: sessionToken,
+        userId: user.id,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+      await db.set("sessions", sessionToken, session);
+
+      console.log(`[Auth] Auth0 login successful: ${user.id}`);
+
+      return {
+        sessionToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          subscription: user.subscription,
+          preferences: user.preferences,
+        },
+      };
     }),
 });
