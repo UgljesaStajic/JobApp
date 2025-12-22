@@ -405,13 +405,25 @@ export const authRouter = createTRPCRouter({
           });
 
           if (!signupResponse.ok) {
-            const error = await signupResponse.json();
-            console.error("Auth0 signup failed:", error);
+            const errorText = await signupResponse.text();
+            let errorMessage = "Failed to create account";
+            
+            try {
+              const error = JSON.parse(errorText);
+              errorMessage = error.description || error.message || errorMessage;
+              console.error("Auth0 signup failed:", error);
+            } catch {
+              console.error("Auth0 signup failed:", errorText);
+            }
+            
             throw new TRPCError({
               code: "BAD_REQUEST",
-              message: error.description || error.message || "Failed to create account",
+              message: errorMessage,
             });
           }
+
+          const signupData = await signupResponse.json();
+          console.log("Auth0 signup successful:", signupData);
         }
 
         const tokenResponse = await fetch(`https://${auth0Domain}/oauth/token`, {
@@ -424,15 +436,32 @@ export const authRouter = createTRPCRouter({
             client_id: clientId,
             client_secret: clientSecret,
             scope: "openid profile email",
+            realm: "Username-Password-Authentication",
           }),
         });
 
         if (!tokenResponse.ok) {
-          const error = await tokenResponse.json();
-          console.error("Auth0 token failed:", error);
+          const errorText = await tokenResponse.text();
+          let errorMessage = "Authentication failed";
+          
+          try {
+            const error = JSON.parse(errorText);
+            console.error("Auth0 token failed:", error);
+            
+            if (error.error === "access_denied" && error.error_description?.includes("Grant type")) {
+              errorMessage = "Password grant not enabled. Please enable Password grant type in Auth0 Dashboard > Applications > Settings > Advanced Settings > Grant Types.";
+            } else if (error.error_description) {
+              errorMessage = error.error_description;
+            } else if (error.message) {
+              errorMessage = error.message;
+            }
+          } catch {
+            console.error("Auth0 token failed:", errorText);
+          }
+          
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: error.error_description || "Invalid email or password",
+            message: errorMessage,
           });
         }
 
