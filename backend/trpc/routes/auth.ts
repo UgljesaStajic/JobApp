@@ -368,4 +368,134 @@ export const authRouter = createTRPCRouter({
         },
       };
     }),
+
+  auth0Password: publicProcedure
+    .input(z.object({
+      email: z.string().email(),
+      password: z.string().min(8),
+      name: z.string(),
+      isSignup: z.boolean(),
+    }))
+    .mutation(async ({ input }) => {
+      console.log(`[Auth] Auth0 password ${input.isSignup ? 'signup' : 'login'} for ${input.email}`);
+      
+      const auth0Domain = process.env.EXPO_PUBLIC_AUTH0_DOMAIN;
+      const clientId = process.env.EXPO_PUBLIC_AUTH0_CLIENT_ID;
+      const clientSecret = process.env.AUTH0_CLIENT_SECRET;
+
+      if (!auth0Domain || !clientId || !clientSecret) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Auth0 configuration missing",
+        });
+      }
+
+      try {
+        if (input.isSignup) {
+          const signupResponse = await fetch(`https://${auth0Domain}/dbconnections/signup`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              client_id: clientId,
+              email: input.email,
+              password: input.password,
+              connection: "Username-Password-Authentication",
+              name: input.name,
+            }),
+          });
+
+          if (!signupResponse.ok) {
+            const error = await signupResponse.json();
+            console.error("Auth0 signup failed:", error);
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: error.description || error.message || "Failed to create account",
+            });
+          }
+        }
+
+        const tokenResponse = await fetch(`https://${auth0Domain}/oauth/token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            grant_type: "password",
+            username: input.email,
+            password: input.password,
+            client_id: clientId,
+            client_secret: clientSecret,
+            scope: "openid profile email",
+          }),
+        });
+
+        if (!tokenResponse.ok) {
+          const error = await tokenResponse.json();
+          console.error("Auth0 token failed:", error);
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error.error_description || "Invalid email or password",
+          });
+        }
+
+        const tokens = await tokenResponse.json();
+        
+        const userInfoResponse = await fetch(`https://${auth0Domain}/userinfo`, {
+          headers: { Authorization: `Bearer ${tokens.access_token}` },
+        });
+
+        if (!userInfoResponse.ok) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Failed to fetch user info",
+          });
+        }
+
+        const userInfo = await userInfoResponse.json();
+        const emailRaw = sanitizeEmail(userInfo.email);
+
+        let mapping = await db.get<EmailMapping>("user_emails", emailRaw);
+        let user: UserData | null = null;
+
+        if (mapping) {
+          user = await db.get<UserData>("users", mapping.userId);
+        }
+
+        if (!user) {
+          const userId = generateId("user");
+          user = createDefaultUser(userId, emailRaw, userInfo.name || input.name, "");
+          
+          await db.set("users", userId, user);
+          await db.set("user_emails", emailRaw, { id: emailRaw, userId });
+        }
+
+        const sessionToken = generateId("sess");
+        const session: SessionData = {
+          id: sessionToken,
+          userId: user.id,
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        };
+        await db.set("sessions", sessionToken, session);
+
+        console.log(`[Auth] Auth0 password auth successful: ${user.id}`);
+
+        return {
+          sessionToken,
+          user: {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            subscription: user.subscription,
+            preferences: user.preferences,
+          },
+        };
+      } catch (error: any) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+        console.error("Auth0 password auth error:", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error.message || "Authentication failed",
+        });
+      }
+    }),
 });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -10,23 +10,15 @@ import {
   ActivityIndicator,
   StatusBar,
   Pressable,
+  TextInput,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { ArrowRight, AlertCircle } from "lucide-react-native";
-import * as AuthSession from "expo-auth-session";
-import * as WebBrowser from "expo-web-browser";
+import { ArrowRight, AlertCircle, Mail, Lock, User } from "lucide-react-native";
 
 import { useApp } from "@/context/AppContext";
 import { useTheme } from "@/hooks/useTheme";
 import { trpc } from "@/lib/trpc";
-
-WebBrowser.maybeCompleteAuthSession();
-
-const auth0Domain = process.env.EXPO_PUBLIC_AUTH0_DOMAIN!;
-const auth0ClientId = process.env.EXPO_PUBLIC_AUTH0_CLIENT_ID!;
-
-// Unused import removed
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -37,66 +29,32 @@ export default function LoginScreen() {
   const [formError, setFormError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   
-  const auth0AuthMutation = trpc.auth.auth0Login.useMutation();
-
-  const redirectUri = AuthSession.makeRedirectUri({
-    scheme: 'exp',
-    ...(Platform.OS === 'web' ? {} : { native: 'exp://redirect' })
-  });
-
-  const [request, result, promptAsync] = AuthSession.useAuthRequest(
-    {
-      redirectUri,
-      clientId: auth0ClientId,
-      responseType: AuthSession.ResponseType.Code,
-      scopes: ['openid', 'profile', 'email'],
-      extraParams: {
-        screen_hint: isRegistering ? 'signup' : 'login',
-      },
-    },
-    {
-      authorizationEndpoint: `https://${auth0Domain}/authorize`,
-    }
-  );
-
-  const handleAuth0Response = React.useCallback(async (code: string) => {
-    try {
-      setIsLoading(true);
-      setFormError(null);
-      
-      const result = await auth0AuthMutation.mutateAsync({
-        code,
-        redirectUri,
-      });
-      
-      login(result.user as any, result.sessionToken);
-      router.replace("/(tabs)");
-    } catch (error: any) {
-      console.error("Auth0 auth error:", error);
-      setFormError(error.message || "Failed to authenticate with Auth0.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [auth0AuthMutation, login, router, redirectUri]);
-
-  useEffect(() => {
-    if (result?.type === "success" && result.params.code) {
-      handleAuth0Response(result.params.code);
-    } else if (result?.type === "error") {
-      setFormError(result.error?.message || "Authentication failed");
-    }
-  }, [result, handleAuth0Response]);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  
+  const auth0PasswordMutation = trpc.auth.auth0Password.useMutation();
 
   const handleSubmit = async () => {
     setFormError(null);
-    if (!request) {
-      setFormError("Authentication not ready. Please try again.");
+    
+    if (!email || !password || (isRegistering && !fullName)) {
+      setFormError("Please fill in all fields");
       return;
     }
     
     try {
       setIsLoading(true);
-      await promptAsync();
+      
+      const result = await auth0PasswordMutation.mutateAsync({
+        email,
+        password,
+        name: fullName || email.split("@")[0],
+        isSignup: isRegistering,
+      });
+      
+      login(result.user as any, result.sessionToken);
+      router.replace("/(tabs)");
     } catch (error: any) {
       console.error("Auth error:", error);
       setFormError(error.message || "Authentication failed. Please try again.");
@@ -145,6 +103,7 @@ export default function LoginScreen() {
             onPress={() => {
               setIsRegistering(false);
               setFormError(null);
+              setFullName("");
             }}
           >
             <Text style={[
@@ -178,30 +137,71 @@ export default function LoginScreen() {
             </View>
           )}
 
-          <View style={styles.infoContainer}>
-            <Text style={[styles.infoText, { color: theme.textSecondary }]}>
-              {isRegistering 
-                ? "Create your account securely with Auth0. Click the button below to get started."
-                : "Sign in securely with Auth0. Click the button below to continue."}
-            </Text>
+          {isRegistering && (
+            <View style={[styles.inputContainer, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <User size={20} color={theme.textSecondary} style={styles.inputIcon} />
+              <TextInput
+                style={[styles.input, { color: theme.text }]}
+                placeholder="Full Name"
+                placeholderTextColor={theme.textSecondary}
+                value={fullName}
+                onChangeText={setFullName}
+                autoCapitalize="words"
+                autoComplete="name"
+              />
+            </View>
+          )}
+
+          <View style={[styles.inputContainer, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Mail size={20} color={theme.textSecondary} style={styles.inputIcon} />
+            <TextInput
+              style={[styles.input, { color: theme.text }]}
+              placeholder="Email"
+              placeholderTextColor={theme.textSecondary}
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoComplete="email"
+            />
+          </View>
+
+          <View style={[styles.inputContainer, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Lock size={20} color={theme.textSecondary} style={styles.inputIcon} />
+            <TextInput
+              style={[styles.input, { color: theme.text }]}
+              placeholder="Password"
+              placeholderTextColor={theme.textSecondary}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoCapitalize="none"
+              autoComplete="password"
+            />
           </View>
 
           <TouchableOpacity
-            style={[styles.submitButton, { backgroundColor: theme.primary, opacity: isLoading || !request ? 0.7 : 1 }]}
+            style={[styles.submitButton, { backgroundColor: theme.primary, opacity: isLoading ? 0.7 : 1 }]}
             onPress={handleSubmit}
-            disabled={isLoading || !request}
+            disabled={isLoading}
           >
             {isLoading ? (
               <ActivityIndicator color="white" />
             ) : (
               <View style={styles.submitContent}>
                 <Text style={styles.submitButtonText}>
-                  {isRegistering ? "Create Account with Auth0" : "Sign In with Auth0"}
+                  {isRegistering ? "Create Account" : "Sign In"}
                 </Text>
                 <ArrowRight size={20} color="white" style={{ marginLeft: 8 }} />
               </View>
             )}
           </TouchableOpacity>
+
+          <View style={styles.authInfoContainer}>
+            <Text style={[styles.authInfoText, { color: theme.textSecondary }]}>
+              Secured by Auth0
+            </Text>
+          </View>
         </View>
 
         <View style={styles.footer}>
@@ -296,15 +296,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     flex: 1,
   },
-  infoContainer: {
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 24,
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    height: 56,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    marginBottom: 16,
   },
-  infoText: {
-    fontSize: 15,
-    lineHeight: 22,
-    textAlign: "center",
+  inputIcon: {
+    marginRight: 12,
+  },
+  input: {
+    flex: 1,
+    fontSize: 16,
+    height: "100%",
+  },
+  authInfoContainer: {
+    alignItems: "center",
+    marginTop: 16,
+  },
+  authInfoText: {
+    fontSize: 13,
+    fontWeight: "500",
   },
   submitButton: {
     height: 56,
