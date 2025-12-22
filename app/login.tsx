@@ -30,6 +30,7 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [lastAttemptTime, setLastAttemptTime] = useState<number>(0);
   const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
+  const MINIMUM_DELAY = 3;
   
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -48,8 +49,10 @@ export default function LoginScreen() {
     
     const now = Date.now();
     const timeSinceLastAttempt = (now - lastAttemptTime) / 1000;
-    if (timeSinceLastAttempt < cooldownSeconds) {
-      const waitTime = Math.ceil(cooldownSeconds - timeSinceLastAttempt);
+    
+    const requiredDelay = Math.max(MINIMUM_DELAY, cooldownSeconds);
+    if (lastAttemptTime > 0 && timeSinceLastAttempt < requiredDelay) {
+      const waitTime = Math.ceil(requiredDelay - timeSinceLastAttempt);
       setFormError(`Please wait ${waitTime} seconds before trying again`);
       return;
     }
@@ -83,11 +86,11 @@ export default function LoginScreen() {
       const rateLimitMatch = errorMessage.match(/after (\d+) seconds/);
       if (rateLimitMatch) {
         const seconds = parseInt(rateLimitMatch[1], 10);
-        setCooldownSeconds(seconds + 5);
+        setCooldownSeconds(seconds + 2);
         setFormError(`Too many attempts. Please wait ${seconds} seconds before trying again.`);
-      } else if (errorMessage.includes("security purposes")) {
-        setCooldownSeconds(30);
-        setFormError("Too many login attempts. Please wait 30 seconds and try again.");
+      } else if (errorMessage.includes("security purposes") || errorMessage.includes("rate limit")) {
+        setCooldownSeconds(45);
+        setFormError("Too many attempts. Please wait 45 seconds and try again.");
       } else {
         setFormError(errorMessage);
       }
@@ -214,9 +217,9 @@ export default function LoginScreen() {
           </View>
 
           <TouchableOpacity
-            style={[styles.submitButton, { backgroundColor: theme.primary, opacity: (isLoading || cooldownSeconds > 0) ? 0.7 : 1 }]}
+            style={[styles.submitButton, { backgroundColor: theme.primary, opacity: isLoading ? 0.7 : 1 }]}
             onPress={handleSubmit}
-            disabled={isLoading || cooldownSeconds > 0}
+            disabled={isLoading}
           >
             {isLoading ? (
               <ActivityIndicator color="white" />
