@@ -79,11 +79,20 @@ export const authRouter = createTRPCRouter({
 
       const userId = authData.user.id;
       
-      await new Promise(resolve => setTimeout(resolve, 500));
+      console.log(`[Auth] User created in auth.users, waiting for trigger to create user record...`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
       let user = await db.get<UserData>("users", userId, true);
+      let retries = 0;
+      while (!user && retries < 5) {
+        console.log(`[Auth] Waiting for user record to be created by trigger (attempt ${retries + 1})...`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        user = await db.get<UserData>("users", userId, true);
+        retries++;
+      }
       
       if (!user) {
+        console.error(`[Auth] User record not created by trigger, creating manually with service role...`);
         user = createDefaultUser(userId, emailRaw, input.name);
         await db.set("users", userId, user, true);
       }
@@ -135,6 +144,7 @@ export const authRouter = createTRPCRouter({
       let user = await db.get<UserData>("users", userId, true);
 
       if (!user) {
+        console.log(`[Auth] User record not found, creating...`);
         const name = authData.user.user_metadata?.name || emailRaw.split("@")[0];
         user = createDefaultUser(userId, emailRaw, name);
         await db.set("users", userId, user, true);
