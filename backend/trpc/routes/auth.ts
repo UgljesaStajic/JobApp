@@ -392,28 +392,37 @@ export const authRouter = createTRPCRouter({
 
       try {
         if (input.isSignup) {
+          console.log("[Auth0] Attempting signup for:", input.email);
+          
+          const signupPayload = {
+            client_id: clientId,
+            email: input.email,
+            password: input.password,
+            connection: "Username-Password-Authentication",
+            name: input.name,
+          };
+          
+          console.log("[Auth0] Signup payload:", { ...signupPayload, password: "[REDACTED]" });
+          
           const signupResponse = await fetch(`https://${auth0Domain}/dbconnections/signup`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              client_id: clientId,
-              email: input.email,
-              password: input.password,
-              connection: "Username-Password-Authentication",
-              name: input.name,
-            }),
+            body: JSON.stringify(signupPayload),
           });
 
+          const signupText = await signupResponse.text();
+          console.log("[Auth0] Signup response status:", signupResponse.status);
+          console.log("[Auth0] Signup response body:", signupText);
+
           if (!signupResponse.ok) {
-            const errorText = await signupResponse.text();
             let errorMessage = "Failed to create account";
             
             try {
-              const error = JSON.parse(errorText);
-              errorMessage = error.description || error.message || errorMessage;
-              console.error("Auth0 signup failed:", error);
+              const error = JSON.parse(signupText);
+              errorMessage = error.description || error.message || error.error || errorMessage;
+              console.error("[Auth0] Signup failed with error:", error);
             } catch {
-              console.error("Auth0 signup failed:", errorText);
+              console.error("[Auth0] Signup failed with unparseable response:", signupText);
             }
             
             throw new TRPCError({
@@ -422,8 +431,12 @@ export const authRouter = createTRPCRouter({
             });
           }
 
-          const signupData = await signupResponse.json();
-          console.log("Auth0 signup successful:", signupData);
+          try {
+            const signupData = JSON.parse(signupText);
+            console.log("[Auth0] Signup successful:", signupData);
+          } catch {
+            console.log("[Auth0] Signup successful but couldn't parse response");
+          }
         }
 
         const tokenResponse = await fetch(`https://${auth0Domain}/oauth/token`, {
