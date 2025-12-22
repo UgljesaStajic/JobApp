@@ -1,18 +1,15 @@
 import * as z from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, publicProcedure } from "../create-context";
-import { db } from "@/backend/db";
+import { db, supabase } from "@/backend/db";
 
-// Types
 interface UserData {
   id: string;
   email: string;
-  passwordHash: string;
   name: string;
   subscription: string;
   createdAt: string;
   preferences: any;
-  // Arrays are initialized empty
   resumes?: any[];
   jobs?: any[];
   applications?: any[];
@@ -20,40 +17,14 @@ interface UserData {
   interviewSessions?: any[];
 }
 
-interface SessionData {
-  id: string;
-  userId: string;
-  expiresAt: string;
-}
-
-interface EmailMapping {
-  id: string; // The email itself
-  userId: string;
-}
-
-// Helpers
-function hashPassword(password: string): string {
-  // In a real app, use bcrypt/argon2
-  return Buffer.from(password).toString("base64");
-}
-
-function verifyPassword(password: string, hash: string): boolean {
-  return hashPassword(password) === hash;
-}
-
-function generateId(prefix: string): string {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-}
-
 function sanitizeEmail(email: string): string {
   return email.toLowerCase().trim();
 }
 
-function createDefaultUser(id: string, email: string, name: string, passwordHash: string): UserData {
+function createDefaultUser(id: string, email: string, name: string): UserData {
   return {
     id,
     email,
-    passwordHash,
     name,
     subscription: "free",
     createdAt: new Date().toISOString(),
@@ -70,60 +41,6 @@ function createDefaultUser(id: string, email: string, name: string, passwordHash
   };
 }
 
-async function exchangeAuth0Code(code: string, redirectUri: string) {
-  const auth0Domain = process.env.EXPO_PUBLIC_AUTH0_DOMAIN;
-  const clientId = process.env.EXPO_PUBLIC_AUTH0_CLIENT_ID;
-  const clientSecret = process.env.AUTH0_CLIENT_SECRET;
-
-  if (!auth0Domain || !clientId || !clientSecret) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Auth0 configuration missing",
-    });
-  }
-
-  const tokenResponse = await fetch(`https://${auth0Domain}/oauth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      grant_type: "authorization_code",
-      client_id: clientId,
-      client_secret: clientSecret,
-      code,
-      redirect_uri: redirectUri,
-    }),
-  });
-
-  if (!tokenResponse.ok) {
-    const error = await tokenResponse.text();
-    console.error("Auth0 token exchange failed:", error);
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "Failed to exchange authorization code",
-    });
-  }
-
-  const tokens = await tokenResponse.json();
-  
-  const userInfoResponse = await fetch(`https://${auth0Domain}/userinfo`, {
-    headers: { Authorization: `Bearer ${tokens.access_token}` },
-  });
-
-  if (!userInfoResponse.ok) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "Failed to fetch user info",
-    });
-  }
-
-  const userInfo = await userInfoResponse.json();
-  return {
-    email: userInfo.email,
-    name: userInfo.name || userInfo.email.split("@")[0],
-    sub: userInfo.sub,
-  };
-}
-
 export const authRouter = createTRPCRouter({
   register: publicProcedure
     .input(z.object({
@@ -135,37 +52,40 @@ export const authRouter = createTRPCRouter({
       console.log(`[Auth] Registering ${input.email}`);
       const emailRaw = sanitizeEmail(input.email);
 
-      // 1. Check if email exists
-      const existingMapping = await db.get<EmailMapping>("user_emails", emailRaw);
-      if (existingMapping) {
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: emailRaw,
+        password: input.password,
+        options: {
+          data: {
+            name: input.name,
+          },
+        },
+      });
+
+      if (authError) {
+        console.error("[Auth] Supabase signup error:", authError);
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "An account with this email already exists",
+          message: authError.message || "Failed to create account",
         });
       }
 
-      // 2. Create User
-      const userId = generateId("user");
-      const user = createDefaultUser(userId, emailRaw, input.name, hashPassword(input.password));
+      if (!authData.user) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to create user account",
+        });
+      }
 
-      // 3. Save User & Mapping
-      // We do this sequentially to ensure consistency
+      const userId = authData.user.id;
+      const user = createDefaultUser(userId, emailRaw, input.name);
+
       await db.set("users", userId, user);
-      await db.set("user_emails", emailRaw, { id: emailRaw, userId });
-
-      // 4. Create Session
-      const sessionToken = generateId("sess");
-      const session: SessionData = {
-        id: sessionToken,
-        userId,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      };
-      await db.set("sessions", sessionToken, session);
 
       console.log(`[Auth] Registered successfully: ${userId}`);
 
       return {
-        sessionToken,
+        sessionToken: authData.session?.access_token || "",
         user: {
           id: user.id,
           email: user.email,
@@ -185,46 +105,39 @@ export const authRouter = createTRPCRouter({
       console.log(`[Auth] Login attempt ${input.email}`);
       const emailRaw = sanitizeEmail(input.email);
 
-      // 1. Find User ID
-      const mapping = await db.get<EmailMapping>("user_emails", emailRaw);
-      if (!mapping) {
-        // Obscure error for security, or be explicit for UX. Being explicit here as per request.
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: emailRaw,
+        password: input.password,
+      });
+
+      if (authError) {
+        console.error("[Auth] Supabase login error:", authError);
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "No account found with this email address.",
+          message: authError.message || "Login failed",
         });
       }
 
-      // 2. Get User
-      const user = await db.get<UserData>("users", mapping.userId);
-      if (!user) {
+      if (!authData.user) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: "User data not found despite email mapping existing.",
+          message: "User data not found",
         });
       }
 
-      // 3. Verify Password
-      if (!verifyPassword(input.password, user.passwordHash)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Incorrect password.",
-        });
-      }
+      const userId = authData.user.id;
+      let user = await db.get<UserData>("users", userId);
 
-      // 4. Create Session
-      const sessionToken = generateId("sess");
-      const session: SessionData = {
-        id: sessionToken,
-        userId: user.id,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      };
-      await db.set("sessions", sessionToken, session);
+      if (!user) {
+        const name = authData.user.user_metadata?.name || emailRaw.split("@")[0];
+        user = createDefaultUser(userId, emailRaw, name);
+        await db.set("users", userId, user);
+      }
 
       console.log(`[Auth] Login successful: ${user.id}`);
 
       return {
-        sessionToken,
+        sessionToken: authData.session?.access_token || "",
         user: {
           id: user.id,
           email: user.email,
@@ -245,33 +158,36 @@ export const authRouter = createTRPCRouter({
       console.log(`[Auth] Google Auth ${input.email}`);
       const emailRaw = sanitizeEmail(input.email);
 
-      // 1. Find or Create User
-      let mapping = await db.get<EmailMapping>("user_emails", emailRaw);
-      let user: UserData | null = null;
+      const { data: authData, error: authError } = await supabase.auth.signInWithIdToken({
+        provider: 'google',
+        token: input.idToken,
+      });
 
-      if (mapping) {
-        user = await db.get<UserData>("users", mapping.userId);
+      if (authError) {
+        console.error("[Auth] Google auth error:", authError);
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: authError.message || "Google authentication failed",
+        });
       }
+
+      if (!authData.user) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to authenticate with Google",
+        });
+      }
+
+      const userId = authData.user.id;
+      let user = await db.get<UserData>("users", userId);
 
       if (!user) {
-        const userId = generateId("user");
-        user = createDefaultUser(userId, emailRaw, input.name, "");
-        
+        user = createDefaultUser(userId, emailRaw, input.name);
         await db.set("users", userId, user);
-        await db.set("user_emails", emailRaw, { id: emailRaw, userId });
       }
 
-      // 2. Create Session
-      const sessionToken = generateId("sess");
-      const session: SessionData = {
-        id: sessionToken,
-        userId: user.id,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      };
-      await db.set("sessions", sessionToken, session);
-
       return {
-        sessionToken,
+        sessionToken: authData.session?.access_token || "",
         user: {
           id: user.id,
           email: user.email,
@@ -287,13 +203,13 @@ export const authRouter = createTRPCRouter({
       sessionToken: z.string(),
     }))
     .query(async ({ input }) => {
-      const session = await db.get<SessionData>("sessions", input.sessionToken);
+      const { data: userData, error: authError } = await supabase.auth.getUser(input.sessionToken);
       
-      if (!session || new Date(session.expiresAt) < new Date()) {
+      if (authError || !userData.user) {
         throw new TRPCError({ code: "UNAUTHORIZED", message: "Session expired" });
       }
 
-      const user = await db.get<UserData>("users", session.userId);
+      const user = await db.get<UserData>("users", userData.user.id);
       if (!user) {
         throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
       }
@@ -317,227 +233,7 @@ export const authRouter = createTRPCRouter({
       sessionToken: z.string(),
     }))
     .mutation(async ({ input }) => {
-      await db.delete("sessions", input.sessionToken);
+      await supabase.auth.signOut();
       return { success: true };
-    }),
-
-  auth0Login: publicProcedure
-    .input(z.object({
-      code: z.string(),
-      redirectUri: z.string(),
-    }))
-    .mutation(async ({ input }) => {
-      console.log(`[Auth] Auth0 login with code`);
-      
-      const userInfo = await exchangeAuth0Code(input.code, input.redirectUri);
-      const emailRaw = sanitizeEmail(userInfo.email);
-
-      let mapping = await db.get<EmailMapping>("user_emails", emailRaw);
-      let user: UserData | null = null;
-
-      if (mapping) {
-        user = await db.get<UserData>("users", mapping.userId);
-      }
-
-      if (!user) {
-        const userId = generateId("user");
-        user = createDefaultUser(userId, emailRaw, userInfo.name, "");
-        
-        await db.set("users", userId, user);
-        await db.set("user_emails", emailRaw, { id: emailRaw, userId });
-      }
-
-      const sessionToken = generateId("sess");
-      const session: SessionData = {
-        id: sessionToken,
-        userId: user.id,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      };
-      await db.set("sessions", sessionToken, session);
-
-      console.log(`[Auth] Auth0 login successful: ${user.id}`);
-
-      return {
-        sessionToken,
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          subscription: user.subscription,
-          preferences: user.preferences,
-        },
-      };
-    }),
-
-  auth0Password: publicProcedure
-    .input(z.object({
-      email: z.string().email(),
-      password: z.string().min(8),
-      name: z.string(),
-      isSignup: z.boolean(),
-    }))
-    .mutation(async ({ input }) => {
-      console.log(`[Auth] Auth0 password ${input.isSignup ? 'signup' : 'login'} for ${input.email}`);
-      
-      const auth0Domain = process.env.EXPO_PUBLIC_AUTH0_DOMAIN;
-      const clientId = process.env.EXPO_PUBLIC_AUTH0_CLIENT_ID;
-      const clientSecret = process.env.AUTH0_CLIENT_SECRET;
-
-      if (!auth0Domain || !clientId || !clientSecret) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Auth0 configuration missing",
-        });
-      }
-
-      try {
-        if (input.isSignup) {
-          console.log("[Auth0] Attempting signup for:", input.email);
-          
-          const signupPayload = {
-            client_id: clientId,
-            email: input.email,
-            password: input.password,
-            connection: "Username-Password-Authentication",
-            name: input.name,
-          };
-          
-          console.log("[Auth0] Signup payload:", { ...signupPayload, password: "[REDACTED]" });
-          
-          const signupResponse = await fetch(`https://${auth0Domain}/dbconnections/signup`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(signupPayload),
-          });
-
-          const signupText = await signupResponse.text();
-          console.log("[Auth0] Signup response status:", signupResponse.status);
-          console.log("[Auth0] Signup response body:", signupText);
-
-          if (!signupResponse.ok) {
-            let errorMessage = "Failed to create account";
-            
-            try {
-              const error = JSON.parse(signupText);
-              errorMessage = error.description || error.message || error.error || errorMessage;
-              console.error("[Auth0] Signup failed with error:", error);
-            } catch {
-              console.error("[Auth0] Signup failed with unparseable response:", signupText);
-            }
-            
-            throw new TRPCError({
-              code: "BAD_REQUEST",
-              message: errorMessage,
-            });
-          }
-
-          try {
-            const signupData = JSON.parse(signupText);
-            console.log("[Auth0] Signup successful:", signupData);
-          } catch {
-            console.log("[Auth0] Signup successful but couldn't parse response");
-          }
-        }
-
-        const tokenResponse = await fetch(`https://${auth0Domain}/oauth/token`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            grant_type: "password",
-            username: input.email,
-            password: input.password,
-            client_id: clientId,
-            client_secret: clientSecret,
-            scope: "openid profile email",
-            realm: "Username-Password-Authentication",
-          }),
-        });
-
-        if (!tokenResponse.ok) {
-          const errorText = await tokenResponse.text();
-          let errorMessage = "Authentication failed";
-          
-          try {
-            const error = JSON.parse(errorText);
-            console.error("Auth0 token failed:", error);
-            
-            if (error.error === "access_denied" && error.error_description?.includes("Grant type")) {
-              errorMessage = "Password grant not enabled. Please enable Password grant type in Auth0 Dashboard > Applications > Settings > Advanced Settings > Grant Types.";
-            } else if (error.error_description) {
-              errorMessage = error.error_description;
-            } else if (error.message) {
-              errorMessage = error.message;
-            }
-          } catch {
-            console.error("Auth0 token failed:", errorText);
-          }
-          
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: errorMessage,
-          });
-        }
-
-        const tokens = await tokenResponse.json();
-        
-        const userInfoResponse = await fetch(`https://${auth0Domain}/userinfo`, {
-          headers: { Authorization: `Bearer ${tokens.access_token}` },
-        });
-
-        if (!userInfoResponse.ok) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Failed to fetch user info",
-          });
-        }
-
-        const userInfo = await userInfoResponse.json();
-        const emailRaw = sanitizeEmail(userInfo.email);
-
-        let mapping = await db.get<EmailMapping>("user_emails", emailRaw);
-        let user: UserData | null = null;
-
-        if (mapping) {
-          user = await db.get<UserData>("users", mapping.userId);
-        }
-
-        if (!user) {
-          const userId = generateId("user");
-          user = createDefaultUser(userId, emailRaw, userInfo.name || input.name, "");
-          
-          await db.set("users", userId, user);
-          await db.set("user_emails", emailRaw, { id: emailRaw, userId });
-        }
-
-        const sessionToken = generateId("sess");
-        const session: SessionData = {
-          id: sessionToken,
-          userId: user.id,
-          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-        };
-        await db.set("sessions", sessionToken, session);
-
-        console.log(`[Auth] Auth0 password auth successful: ${user.id}`);
-
-        return {
-          sessionToken,
-          user: {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            subscription: user.subscription,
-            preferences: user.preferences,
-          },
-        };
-      } catch (error: any) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-        console.error("Auth0 password auth error:", error);
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message || "Authentication failed",
-        });
-      }
     }),
 });

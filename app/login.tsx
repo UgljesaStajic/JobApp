@@ -33,7 +33,8 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   
-  const auth0PasswordMutation = trpc.auth.auth0Password.useMutation();
+  const registerMutation = trpc.auth.register.useMutation();
+  const loginMutation = trpc.auth.login.useMutation();
 
   const handleSubmit = async () => {
     setFormError(null);
@@ -46,12 +47,19 @@ export default function LoginScreen() {
     try {
       setIsLoading(true);
       
-      const result = await auth0PasswordMutation.mutateAsync({
-        email,
-        password,
-        name: fullName || email.split("@")[0],
-        isSignup: isRegistering,
-      });
+      let result;
+      if (isRegistering) {
+        result = await registerMutation.mutateAsync({
+          email,
+          password,
+          name: fullName || email.split("@")[0],
+        });
+      } else {
+        result = await loginMutation.mutateAsync({
+          email,
+          password,
+        });
+      }
       
       login(result.user as any, result.sessionToken);
       router.replace("/(tabs)");
@@ -199,7 +207,7 @@ export default function LoginScreen() {
 
           <View style={styles.authInfoContainer}>
             <Text style={[styles.authInfoText, { color: theme.textSecondary }]}>
-              Secured by Auth0
+              Secured by Supabase
             </Text>
           </View>
         </View>
