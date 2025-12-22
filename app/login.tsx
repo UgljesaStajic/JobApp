@@ -28,6 +28,8 @@ export default function LoginScreen() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [lastAttemptTime, setLastAttemptTime] = useState<number>(0);
+  const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
   
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -44,8 +46,17 @@ export default function LoginScreen() {
       return;
     }
     
+    const now = Date.now();
+    const timeSinceLastAttempt = (now - lastAttemptTime) / 1000;
+    if (timeSinceLastAttempt < cooldownSeconds) {
+      const waitTime = Math.ceil(cooldownSeconds - timeSinceLastAttempt);
+      setFormError(`Please wait ${waitTime} seconds before trying again`);
+      return;
+    }
+    
     try {
       setIsLoading(true);
+      setLastAttemptTime(now);
       
       let result;
       if (isRegistering) {
@@ -61,11 +72,25 @@ export default function LoginScreen() {
         });
       }
       
+      setCooldownSeconds(0);
       login(result.user as any, result.sessionToken);
       router.replace("/(tabs)");
     } catch (error: any) {
       console.error("Auth error:", error);
-      setFormError(error.message || "Authentication failed. Please try again.");
+      
+      const errorMessage = error.message || "Authentication failed. Please try again.";
+      
+      const rateLimitMatch = errorMessage.match(/after (\d+) seconds/);
+      if (rateLimitMatch) {
+        const seconds = parseInt(rateLimitMatch[1], 10);
+        setCooldownSeconds(seconds + 5);
+        setFormError(`Too many attempts. Please wait ${seconds} seconds before trying again.`);
+      } else if (errorMessage.includes("security purposes")) {
+        setCooldownSeconds(30);
+        setFormError("Too many login attempts. Please wait 30 seconds and try again.");
+      } else {
+        setFormError(errorMessage);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -189,9 +214,9 @@ export default function LoginScreen() {
           </View>
 
           <TouchableOpacity
-            style={[styles.submitButton, { backgroundColor: theme.primary, opacity: isLoading ? 0.7 : 1 }]}
+            style={[styles.submitButton, { backgroundColor: theme.primary, opacity: (isLoading || cooldownSeconds > 0) ? 0.7 : 1 }]}
             onPress={handleSubmit}
-            disabled={isLoading}
+            disabled={isLoading || cooldownSeconds > 0}
           >
             {isLoading ? (
               <ActivityIndicator color="white" />
