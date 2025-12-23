@@ -196,11 +196,11 @@ export const [AppProvider, useApp] = createContextHook(() => {
       console.log("[AppContext] ✓ Synced to database");
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        console.error("[AppContext] Sync timeout: Server not responding");
+        console.log("[AppContext] Backend sync timeout (data saved locally)");
       } else if (error.message === 'Failed to fetch' || error.message?.includes('Network')) {
-        console.error("[AppContext] Network error: Backend server may not be running");
+        console.log("[AppContext] Backend not available (data saved locally)");
       } else {
-        console.error("[AppContext] Failed to sync to database:", error.message || error);
+        console.log("[AppContext] Backend sync skipped:", error.message || error);
       }
     }
   }, [sessionToken, state.isAuthenticated]);
