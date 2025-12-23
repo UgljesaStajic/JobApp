@@ -30,7 +30,6 @@ DROP POLICY IF EXISTS "Users can view own data" ON public.users;
 DROP POLICY IF EXISTS "Users can insert own data" ON public.users;
 DROP POLICY IF EXISTS "Users can update own data" ON public.users;
 DROP POLICY IF EXISTS "Users can delete own data" ON public.users;
-DROP POLICY IF EXISTS "Service role can insert users" ON public.users;
 
 -- Create policies for users table
 -- Users can only read their own data
@@ -38,15 +37,11 @@ CREATE POLICY "Users can view own data"
   ON public.users FOR SELECT 
   USING (auth.uid() = id);
 
--- Users can insert their own data (for when authenticated user creates their profile)
+-- Allow inserts during signup (auth.uid() will match the new user's id)
+-- Also allows inserts when there's no auth context (for service role)
 CREATE POLICY "Users can insert own data" 
   ON public.users FOR INSERT 
-  WITH CHECK (auth.uid() = id);
-
--- Service role can insert any user (for trigger function)
-CREATE POLICY "Service role can insert users"
-  ON public.users FOR INSERT
-  WITH CHECK (true);
+  WITH CHECK (auth.uid() = id OR auth.uid() IS NULL);
 
 -- Users can update their own data
 CREATE POLICY "Users can update own data" 
