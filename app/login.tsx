@@ -79,8 +79,6 @@ export default function LoginScreen() {
       login(result.user as any, result.sessionToken);
       router.replace("/(tabs)");
     } catch (error: any) {
-      console.error("Auth error:", error);
-      
       const errorMessage = error.message || "Authentication failed. Please try again.";
       
       const rateLimitMatch = errorMessage.match(/after (\d+) seconds/);
