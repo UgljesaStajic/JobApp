@@ -65,6 +65,16 @@ export const authRouter = createTRPCRouter({
 
       if (authError) {
         console.error("[Auth] Supabase signup error:", authError);
+        
+        if (authError.message?.toLowerCase().includes('already registered') || 
+            authError.message?.toLowerCase().includes('already exists') ||
+            authError.message?.toLowerCase().includes('user already')) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "This email is already registered. Please log in instead.",
+          });
+        }
+        
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: authError.message || "Failed to create account",
