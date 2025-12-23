@@ -241,14 +241,14 @@ export default function LoginScreen() {
         <View style={styles.footer}>
           <Text style={[styles.footerText, { color: theme.textSecondary }]}>
             By continuing, you agree to our{" "}
-            <Text style={[styles.footerLink, { color: theme.primary }]}>
-              Terms
-            </Text>
-            {" and "}
-            <Text style={[styles.footerLink, { color: theme.primary }]}>
-              Privacy Policy
-            </Text>
           </Text>
+          <TouchableOpacity>
+            <Text style={[styles.footerLink, { color: theme.primary }]}>Terms</Text>
+          </TouchableOpacity>
+          <Text style={[styles.footerText, { color: theme.textSecondary }]}> and </Text>
+          <TouchableOpacity>
+            <Text style={[styles.footerLink, { color: theme.primary }]}>Privacy Policy</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
