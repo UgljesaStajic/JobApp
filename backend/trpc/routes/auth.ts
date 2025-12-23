@@ -56,6 +56,7 @@ export const authRouter = createTRPCRouter({
         email: emailRaw,
         password: input.password,
         options: {
+          emailRedirectTo: undefined,
           data: {
             name: input.name,
           },
@@ -78,29 +79,48 @@ export const authRouter = createTRPCRouter({
       }
 
       const userId = authData.user.id;
+      console.log(`[Auth] User created with ID: ${userId}`);
       
-      console.log(`[Auth] User created in auth.users, waiting for trigger to create user record...`);
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log(`[Auth] Waiting for trigger to create user record...`);
+      await new Promise(resolve => setTimeout(resolve, 1500));
       
       let user = await db.get<UserData>("users", userId, true);
       let retries = 0;
-      while (!user && retries < 5) {
-        console.log(`[Auth] Waiting for user record to be created by trigger (attempt ${retries + 1})...`);
-        await new Promise(resolve => setTimeout(resolve, 500));
+      while (!user && retries < 8) {
+        console.log(`[Auth] Waiting for user record (attempt ${retries + 1}/8)...`);
+        await new Promise(resolve => setTimeout(resolve, 600));
         user = await db.get<UserData>("users", userId, true);
         retries++;
       }
       
       if (!user) {
-        console.error(`[Auth] User record not created by trigger, creating manually with service role...`);
+        console.error(`[Auth] Trigger failed, creating user record manually...`);
         user = createDefaultUser(userId, emailRaw, input.name);
-        await db.set("users", userId, user, true);
+        try {
+          await db.set("users", userId, user, true);
+          console.log(`[Auth] Successfully created user record manually`);
+        } catch (dbError: any) {
+          console.error(`[Auth] Failed to create user record:`, dbError);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to create user profile. Please try again.",
+          });
+        }
+      } else {
+        console.log(`[Auth] User record created successfully by trigger`);
       }
 
-      console.log(`[Auth] Registered successfully: ${userId}`);
+      console.log(`[Auth] Registration complete: ${userId}`);
+
+      if (!authData.session) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "No session created. Please check Supabase email confirmation settings.",
+        });
+      }
 
       return {
-        sessionToken: authData.session?.access_token || "",
+        sessionToken: authData.session.access_token,
         user: {
           id: user.id,
           email: user.email,

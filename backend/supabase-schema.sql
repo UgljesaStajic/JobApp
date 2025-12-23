@@ -4,8 +4,11 @@
 -- Enable UUID extension (if not already enabled)
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- Drop existing table if it exists (for clean setup)
+DROP TABLE IF EXISTS public.users CASCADE;
+
 -- Create users table
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE public.users (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
@@ -20,49 +23,79 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- Enable Row Level Security
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view own data" ON public.users;
+DROP POLICY IF EXISTS "Users can insert own data" ON public.users;
+DROP POLICY IF EXISTS "Users can update own data" ON public.users;
+DROP POLICY IF EXISTS "Users can delete own data" ON public.users;
+DROP POLICY IF EXISTS "Service role can insert users" ON public.users;
 
 -- Create policies for users table
 -- Users can only read their own data
 CREATE POLICY "Users can view own data" 
-  ON users FOR SELECT 
+  ON public.users FOR SELECT 
   USING (auth.uid() = id);
 
--- Users can insert their own data
+-- Users can insert their own data (for when authenticated user creates their profile)
 CREATE POLICY "Users can insert own data" 
-  ON users FOR INSERT 
+  ON public.users FOR INSERT 
   WITH CHECK (auth.uid() = id);
+
+-- Service role can insert any user (for trigger function)
+CREATE POLICY "Service role can insert users"
+  ON public.users FOR INSERT
+  WITH CHECK (true);
 
 -- Users can update their own data
 CREATE POLICY "Users can update own data" 
-  ON users FOR UPDATE 
+  ON public.users FOR UPDATE 
   USING (auth.uid() = id);
 
 -- Users can delete their own data
 CREATE POLICY "Users can delete own data" 
-  ON users FOR DELETE 
+  ON public.users FOR DELETE 
   USING (auth.uid() = id);
 
 -- Create index for faster lookups
-CREATE INDEX IF NOT EXISTS users_email_idx ON users(email);
-CREATE INDEX IF NOT EXISTS users_created_at_idx ON users(created_at);
+CREATE INDEX IF NOT EXISTS users_email_idx ON public.users(email);
+CREATE INDEX IF NOT EXISTS users_created_at_idx ON public.users(created_at);
 
 -- Function to automatically create user record after signup
+-- This function runs with SECURITY DEFINER which means it runs with the privileges of the function owner
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+SECURITY DEFINER
+SET search_path = public
+AS $
 BEGIN
-  INSERT INTO public.users (id, email, name)
+  INSERT INTO public.users (id, email, name, subscription, created_at, preferences, resumes, jobs, applications, cover_letters, interview_sessions)
   VALUES (
     NEW.id,
     NEW.email,
-    COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1))
+    COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
+    'free',
+    NOW(),
+    '{"theme": "light", "defaultTemplate": "modern", "language": "en"}'::JSONB,
+    '[]'::JSONB,
+    '[]'::JSONB,
+    '[]'::JSONB,
+    '[]'::JSONB,
+    '[]'::JSONB
   );
   RETURN NEW;
+EXCEPTION
+  WHEN OTHERS THEN
+    RAISE LOG 'Error in handle_new_user trigger: %', SQLERRM;
+    RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$ LANGUAGE plpgsql;
+
+-- Drop existing trigger if it exists
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 
 -- Trigger to call the function after user signup
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
