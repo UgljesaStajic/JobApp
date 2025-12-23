@@ -300,4 +300,49 @@ export const authRouter = createTRPCRouter({
       await supabase.auth.signOut();
       return { success: true };
     }),
+
+  updateUserData: publicProcedure
+    .input(z.object({
+      sessionToken: z.string(),
+      resumes: z.array(z.any()).optional(),
+      jobs: z.array(z.any()).optional(),
+      applications: z.array(z.any()).optional(),
+      coverLetters: z.array(z.any()).optional(),
+      interviewSessions: z.array(z.any()).optional(),
+      preferences: z.any().optional(),
+      subscription: z.string().optional(),
+      name: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { data: userData, error: authError } = await supabase.auth.getUser(input.sessionToken);
+      
+      if (authError || !userData.user) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Session expired" });
+      }
+
+      const userId = userData.user.id;
+      const user = await db.get<UserData>("users", userId, true);
+      
+      if (!user) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+      }
+
+      const updates: Partial<UserData> = {
+        ...user,
+      };
+
+      if (input.resumes !== undefined) updates.resumes = input.resumes;
+      if (input.jobs !== undefined) updates.jobs = input.jobs;
+      if (input.applications !== undefined) updates.applications = input.applications;
+      if (input.coverLetters !== undefined) updates.coverLetters = input.coverLetters;
+      if (input.interviewSessions !== undefined) updates.interviewSessions = input.interviewSessions;
+      if (input.preferences !== undefined) updates.preferences = input.preferences;
+      if (input.subscription !== undefined) updates.subscription = input.subscription;
+      if (input.name !== undefined) updates.name = input.name;
+
+      console.log(`[Auth] Updating user data for ${userId}`);
+      await db.set("users", userId, updates as UserData, true);
+      
+      return { success: true };
+    }),
 });

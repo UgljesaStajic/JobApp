@@ -11,6 +11,7 @@ import type {
 } from "@/types/models";
 
 
+
 type ThemeType = "dark" | "light" | "space";
 
 interface AppState {
@@ -129,6 +130,50 @@ export const [AppProvider, useApp] = createContextHook(() => {
     }
   }, []);
 
+  const syncToDatabase = useCallback(async (updates: {
+    resumes?: Resume[];
+    jobs?: Job[];
+    applications?: Application[];
+    coverLetters?: CoverLetter[];
+    interviewSessions?: InterviewSession[];
+    preferences?: any;
+    subscription?: SubscriptionTier;
+    name?: string;
+  }) => {
+    if (!sessionToken || !state.isAuthenticated) {
+      console.log("[AppContext] Not syncing: not authenticated");
+      return;
+    }
+
+    try {
+      console.log("[AppContext] Syncing to database...", Object.keys(updates));
+      const baseUrl = process.env.EXPO_PUBLIC_RORK_API_BASE_URL;
+      if (!baseUrl) {
+        console.warn("[AppContext] API URL not configured, skipping sync");
+        return;
+      }
+
+      const input = {
+        sessionToken,
+        ...updates,
+      };
+
+      const response = await fetch(`${baseUrl}/api/trpc/auth.updateUserData?batch=1&input=${encodeURIComponent(JSON.stringify({ "0": { json: input } }))}`, {
+        method: 'GET',
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("[AppContext] Sync failed:", text.substring(0, 200));
+        return;
+      }
+
+      console.log("[AppContext] ✓ Synced to database");
+    } catch (error) {
+      console.error("[AppContext] Failed to sync to database:", error);
+    }
+  }, [sessionToken, state.isAuthenticated]);
+
   const login = useCallback(
     (user: { 
       name: string; 
@@ -212,20 +257,23 @@ export const [AppProvider, useApp] = createContextHook(() => {
         user: { ...state.user, subscription: tier },
       };
       saveState(newState);
+      syncToDatabase({ subscription: tier });
     },
-    [state, saveState]
+    [state, saveState, syncToDatabase]
   );
 
   const updatePreferences = useCallback(
     (updates: Partial<AppState["preferences"]>) => {
       console.log("Updating preferences:", updates);
+      const newPreferences = { ...state.preferences, ...updates };
       const newState = {
         ...state,
-        preferences: { ...state.preferences, ...updates },
+        preferences: newPreferences,
       };
       saveState(newState);
+      syncToDatabase({ preferences: newPreferences });
     },
-    [state, saveState]
+    [state, saveState, syncToDatabase]
   );
 
   const updateUser = useCallback(
@@ -236,8 +284,14 @@ export const [AppProvider, useApp] = createContextHook(() => {
         user: { ...state.user, ...updates },
       };
       saveState(newState);
+      if (updates.name) {
+        syncToDatabase({ name: updates.name });
+      }
+      if (updates.subscription) {
+        syncToDatabase({ subscription: updates.subscription });
+      }
     },
-    [state, saveState]
+    [state, saveState, syncToDatabase]
   );
 
   const addResume = useCallback(
@@ -248,38 +302,44 @@ export const [AppProvider, useApp] = createContextHook(() => {
         createdAt: new Date(),
         updatedAt: new Date(),
       };
+      const updatedResumes = [...state.resumes, newResume];
       const newState = {
         ...state,
-        resumes: [...state.resumes, newResume],
+        resumes: updatedResumes,
       };
       saveState(newState);
+      syncToDatabase({ resumes: updatedResumes });
       return newResume;
     },
-    [state, saveState]
+    [state, saveState, syncToDatabase]
   );
 
   const updateResume = useCallback(
     (id: string, updates: Partial<Resume>) => {
+      const updatedResumes = state.resumes.map((r) =>
+        r.id === id ? { ...r, ...updates, updatedAt: new Date() } : r
+      );
       const newState = {
         ...state,
-        resumes: state.resumes.map((r) =>
-          r.id === id ? { ...r, ...updates, updatedAt: new Date() } : r
-        ),
+        resumes: updatedResumes,
       };
       saveState(newState);
+      syncToDatabase({ resumes: updatedResumes });
     },
-    [state, saveState]
+    [state, saveState, syncToDatabase]
   );
 
   const deleteResume = useCallback(
     (id: string) => {
+      const updatedResumes = state.resumes.filter((r) => r.id !== id);
       const newState = {
         ...state,
-        resumes: state.resumes.filter((r) => r.id !== id),
+        resumes: updatedResumes,
       };
       saveState(newState);
+      syncToDatabase({ resumes: updatedResumes });
     },
-    [state, saveState]
+    [state, saveState, syncToDatabase]
   );
 
   const addJob = useCallback(
@@ -289,25 +349,29 @@ export const [AppProvider, useApp] = createContextHook(() => {
         id: Date.now().toString(),
         createdAt: new Date(),
       };
+      const updatedJobs = [...state.jobs, newJob];
       const newState = {
         ...state,
-        jobs: [...state.jobs, newJob],
+        jobs: updatedJobs,
       };
       saveState(newState);
+      syncToDatabase({ jobs: updatedJobs });
       return newJob;
     },
-    [state, saveState]
+    [state, saveState, syncToDatabase]
   );
 
   const deleteJob = useCallback(
     (id: string) => {
+      const updatedJobs = state.jobs.filter((j) => j.id !== id);
       const newState = {
         ...state,
-        jobs: state.jobs.filter((j) => j.id !== id),
+        jobs: updatedJobs,
       };
       saveState(newState);
+      syncToDatabase({ jobs: updatedJobs });
     },
-    [state, saveState]
+    [state, saveState, syncToDatabase]
   );
 
   const addApplication = useCallback(
@@ -317,27 +381,31 @@ export const [AppProvider, useApp] = createContextHook(() => {
         id: Date.now().toString(),
         createdAt: new Date(),
       };
+      const updatedApplications = [...state.applications, newApplication];
       const newState = {
         ...state,
-        applications: [...state.applications, newApplication],
+        applications: updatedApplications,
       };
       saveState(newState);
+      syncToDatabase({ applications: updatedApplications });
       return newApplication;
     },
-    [state, saveState]
+    [state, saveState, syncToDatabase]
   );
 
   const updateApplication = useCallback(
     (id: string, updates: Partial<Application>) => {
+      const updatedApplications = state.applications.map((a) =>
+        a.id === id ? { ...a, ...updates } : a
+      );
       const newState = {
         ...state,
-        applications: state.applications.map((a) =>
-          a.id === id ? { ...a, ...updates } : a
-        ),
+        applications: updatedApplications,
       };
       saveState(newState);
+      syncToDatabase({ applications: updatedApplications });
     },
-    [state, saveState]
+    [state, saveState, syncToDatabase]
   );
 
   const addCoverLetter = useCallback(
@@ -347,14 +415,16 @@ export const [AppProvider, useApp] = createContextHook(() => {
         id: Date.now().toString(),
         createdAt: new Date(),
       };
+      const updatedCoverLetters = [...state.coverLetters, newCoverLetter];
       const newState = {
         ...state,
-        coverLetters: [...state.coverLetters, newCoverLetter],
+        coverLetters: updatedCoverLetters,
       };
       saveState(newState);
+      syncToDatabase({ coverLetters: updatedCoverLetters });
       return newCoverLetter;
     },
-    [state, saveState]
+    [state, saveState, syncToDatabase]
   );
 
   const addInterviewSession = useCallback(
@@ -364,14 +434,16 @@ export const [AppProvider, useApp] = createContextHook(() => {
         id: Date.now().toString(),
         createdAt: new Date(),
       };
+      const updatedSessions = [...state.interviewSessions, newSession];
       const newState = {
         ...state,
-        interviewSessions: [...state.interviewSessions, newSession],
+        interviewSessions: updatedSessions,
       };
       saveState(newState);
+      syncToDatabase({ interviewSessions: updatedSessions });
       return newSession;
     },
-    [state, saveState]
+    [state, saveState, syncToDatabase]
   );
 
   return {
