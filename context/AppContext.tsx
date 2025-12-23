@@ -130,7 +130,17 @@ export const [AppProvider, useApp] = createContextHook(() => {
   }, []);
 
   const login = useCallback(
-    (user: { name: string; email: string; subscription: SubscriptionTier; preferences?: any }, token?: string) => {
+    (user: { 
+      name: string; 
+      email: string; 
+      subscription: SubscriptionTier; 
+      preferences?: any;
+      resumes?: Resume[];
+      jobs?: Job[];
+      applications?: Application[];
+      coverLetters?: CoverLetter[];
+      interviewSessions?: InterviewSession[];
+    }, token?: string) => {
       console.log("User logged in:", user.email);
       if (token) {
         AsyncStorage.setItem("@session_token", token);
@@ -145,6 +155,28 @@ export const [AppProvider, useApp] = createContextHook(() => {
           subscription: user.subscription,
         },
         preferences: user.preferences ? { ...defaultPreferences, ...user.preferences } : state.preferences,
+        resumes: user.resumes?.map((r: any) => ({
+          ...r,
+          createdAt: new Date(r.createdAt),
+          updatedAt: new Date(r.updatedAt),
+        })) || [],
+        jobs: user.jobs?.map((j: any) => ({
+          ...j,
+          createdAt: new Date(j.createdAt),
+        })) || [],
+        applications: user.applications?.map((a: any) => ({
+          ...a,
+          createdAt: new Date(a.createdAt),
+          appliedAt: a.appliedAt ? new Date(a.appliedAt) : undefined,
+        })) || [],
+        coverLetters: user.coverLetters?.map((c: any) => ({
+          ...c,
+          createdAt: new Date(c.createdAt),
+        })) || [],
+        interviewSessions: user.interviewSessions?.map((i: any) => ({
+          ...i,
+          createdAt: new Date(i.createdAt),
+        })) || [],
       };
       saveState(newState);
     },
