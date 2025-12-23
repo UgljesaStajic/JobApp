@@ -162,7 +162,7 @@ export const authRouter = createTRPCRouter({
         console.error("[Auth] Supabase login error:", authError);
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: authError.message || "Login failed",
+          message: "Wrong username or password",
         });
       }
 
