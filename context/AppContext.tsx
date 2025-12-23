@@ -158,8 +158,12 @@ export const [AppProvider, useApp] = createContextHook(() => {
         ...updates,
       };
 
-      const response = await fetch(`${baseUrl}/api/trpc/auth.updateUserData?batch=1&input=${encodeURIComponent(JSON.stringify({ "0": { json: input } }))}`, {
-        method: 'GET',
+      const response = await fetch(`${baseUrl}/api/trpc/auth.updateUserData`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(input),
       });
 
       if (!response.ok) {
