@@ -27,30 +27,26 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist
 DROP POLICY IF EXISTS "Users can view own data" ON public.users;
+DROP POLICY IF EXISTS "Service role can manage all data" ON public.users;
 DROP POLICY IF EXISTS "Users can insert own data" ON public.users;
 DROP POLICY IF EXISTS "Users can update own data" ON public.users;
 DROP POLICY IF EXISTS "Users can delete own data" ON public.users;
 
--- Create policies for users table
+-- Service role bypass (allows backend operations)
+-- This policy allows service_role to bypass RLS completely
+CREATE POLICY "Service role can manage all data" 
+  ON public.users
+  USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');
+
 -- Users can only read their own data
 CREATE POLICY "Users can view own data" 
   ON public.users FOR SELECT 
   USING (auth.uid() = id);
 
--- Allow inserts during signup (auth.uid() will match the new user's id)
--- Also allows inserts when there's no auth context (for service role)
-CREATE POLICY "Users can insert own data" 
-  ON public.users FOR INSERT 
-  WITH CHECK (auth.uid() = id OR auth.uid() IS NULL);
-
 -- Users can update their own data
 CREATE POLICY "Users can update own data" 
   ON public.users FOR UPDATE 
-  USING (auth.uid() = id);
-
--- Users can delete their own data
-CREATE POLICY "Users can delete own data" 
-  ON public.users FOR DELETE 
   USING (auth.uid() = id);
 
 -- Create index for faster lookups

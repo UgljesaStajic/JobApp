@@ -1,7 +1,7 @@
 import * as z from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, publicProcedure } from "../create-context";
-import { db, supabase } from "@/backend/db";
+import { db, supabase, supabaseAdmin } from "@/backend/db";
 
 interface UserData {
   id: string;
@@ -52,14 +52,12 @@ export const authRouter = createTRPCRouter({
       console.log(`[Auth] Registering ${input.email}`);
       const emailRaw = sanitizeEmail(input.email);
 
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
         email: emailRaw,
         password: input.password,
-        options: {
-          emailRedirectTo: undefined,
-          data: {
-            name: input.name,
-          },
+        email_confirm: true,
+        user_metadata: {
+          name: input.name,
         },
       });
 
@@ -92,13 +90,13 @@ export const authRouter = createTRPCRouter({
       console.log(`[Auth] User created with ID: ${userId}`);
       
       console.log(`[Auth] Waiting for trigger to create user record...`);
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
       let user = await db.get<UserData>("users", userId, true);
       let retries = 0;
-      while (!user && retries < 8) {
-        console.log(`[Auth] Waiting for user record (attempt ${retries + 1}/8)...`);
-        await new Promise(resolve => setTimeout(resolve, 600));
+      while (!user && retries < 5) {
+        console.log(`[Auth] Waiting for user record (attempt ${retries + 1}/5)...`);
+        await new Promise(resolve => setTimeout(resolve, 400));
         user = await db.get<UserData>("users", userId, true);
         retries++;
       }
@@ -121,16 +119,21 @@ export const authRouter = createTRPCRouter({
       }
 
       console.log(`[Auth] Registration complete: ${userId}`);
+      
+      const { data: sessionData, error: sessionError } = await supabase.auth.signInWithPassword({
+        email: emailRaw,
+        password: input.password,
+      });
 
-      if (!authData.session) {
+      if (sessionError || !sessionData.session) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: "No session created. Please check Supabase email confirmation settings.",
+          message: "Account created but login failed. Please try logging in.",
         });
       }
 
       return {
-        sessionToken: authData.session.access_token,
+        sessionToken: sessionData.session.access_token,
         user: {
           id: user.id,
           email: user.email,
