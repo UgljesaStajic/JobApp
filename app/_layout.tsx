@@ -47,7 +47,7 @@ class ErrorBoundary extends Component<
         <View style={styles.errorContainer}>
           <Text style={styles.errorTitle}>Something went wrong</Text>
           <Text style={styles.errorMessage}>
-            {this.state.error?.message || "Unknown error"}
+            {String(this.state.error?.message || "Unknown error")}
           </Text>
           <TouchableOpacity
             style={styles.errorButton}
