@@ -12,6 +12,7 @@ import type {
 
 
 
+
 type ThemeType = "dark" | "light" | "space";
 
 interface AppState {
@@ -145,33 +146,43 @@ export const [AppProvider, useApp] = createContextHook(() => {
       return;
     }
 
+    const baseUrl = process.env.EXPO_PUBLIC_RORK_API_BASE_URL;
+    if (!baseUrl) {
+      console.warn("[AppContext] API URL not configured, skipping sync");
+      return;
+    }
+
     try {
       console.log("[AppContext] Syncing to database...", Object.keys(updates));
-      const baseUrl = process.env.EXPO_PUBLIC_RORK_API_BASE_URL;
-      if (!baseUrl) {
-        console.warn("[AppContext] API URL not configured, skipping sync");
-        return;
-      }
-
-      const input = {
+      
+      const payload: any = {
         sessionToken,
-        ...updates,
       };
+
+      if (updates.resumes !== undefined) payload.resumes = updates.resumes;
+      if (updates.jobs !== undefined) payload.jobs = updates.jobs;
+      if (updates.applications !== undefined) payload.applications = updates.applications;
+      if (updates.coverLetters !== undefined) payload.coverLetters = updates.coverLetters;
+      if (updates.interviewSessions !== undefined) payload.interviewSessions = updates.interviewSessions;
+      if (updates.preferences !== undefined) payload.preferences = updates.preferences;
+      if (updates.subscription !== undefined) payload.subscription = updates.subscription;
+      if (updates.name !== undefined) payload.name = updates.name;
 
       const response = await fetch(`${baseUrl}/api/trpc/auth.updateUserData`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(input),
+        body: JSON.stringify({ json: payload }),
       });
 
       if (!response.ok) {
         const text = await response.text();
-        console.error("[AppContext] Sync failed:", text.substring(0, 200));
+        console.error("[AppContext] Sync failed:", text.substring(0, 500));
         return;
       }
 
+      await response.json();
       console.log("[AppContext] ✓ Synced to database");
     } catch (error) {
       console.error("[AppContext] Failed to sync to database:", error);
