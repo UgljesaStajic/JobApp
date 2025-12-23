@@ -293,15 +293,15 @@ Return ONLY the JSON object, no other text.`,
             disabled={optimizeMutation.isPending || !resumeText.trim()}
           >
             {optimizeMutation.isPending ? (
-              <>
+              <View style={styles.buttonContent}>
                 <ActivityIndicator color="white" />
                 <Text style={styles.optimizeButtonText}>Optimizing...</Text>
-              </>
+              </View>
             ) : (
-              <>
+              <View style={styles.buttonContent}>
                 <Sparkles size={20} color="white" />
                 <Text style={styles.optimizeButtonText}>Optimize Resume</Text>
-              </>
+              </View>
             )}
           </TouchableOpacity>
 
@@ -329,15 +329,15 @@ Return ONLY the JSON object, no other text.`,
                   disabled={saveMutation.isPending}
                 >
                   {saveMutation.isPending ? (
-                    <>
+                    <View style={styles.buttonContent}>
                       <ActivityIndicator color="white" size="small" />
                       <Text style={styles.saveButtonText}>Parsing...</Text>
-                    </>
+                    </View>
                   ) : (
-                    <>
+                    <View style={styles.buttonContent}>
                       <CheckCircle2 size={20} color="white" />
                       <Text style={styles.saveButtonText}>Save Resume</Text>
-                    </>
+                    </View>
                   )}
                 </TouchableOpacity>
               </View>
@@ -462,5 +462,10 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: "white",
     ...typography.button,
+  },
+  buttonContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
   },
 });
