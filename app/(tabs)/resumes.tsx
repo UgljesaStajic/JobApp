@@ -111,7 +111,9 @@ export default function ResumesScreen() {
 
           {filteredResumes.length === 0 ? (
             <View style={styles.emptyState}>
-              <FileText size={64} color={theme.textSecondary} opacity={0.3} />
+              <View style={{ opacity: 0.3 }}>
+                <FileText size={64} color={theme.textSecondary} />
+              </View>
               <Text style={[styles.emptyTitle, { color: theme.text }]}>
                 No resumes yet
               </Text>
