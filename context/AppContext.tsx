@@ -147,13 +147,14 @@ export const [AppProvider, useApp] = createContextHook(() => {
     }
 
     const baseUrl = process.env.EXPO_PUBLIC_RORK_API_BASE_URL;
-    if (!baseUrl) {
-      console.warn("[AppContext] API URL not configured, skipping sync");
+    if (!baseUrl || baseUrl === 'https://placeholder.local') {
+      console.log("[AppContext] Backend not configured, data saved locally only");
       return;
     }
 
     try {
       console.log("[AppContext] Syncing to database...", Object.keys(updates));
+      console.log("[AppContext] Backend URL:", baseUrl);
       
       const payload: any = {
         sessionToken,
@@ -168,13 +169,22 @@ export const [AppProvider, useApp] = createContextHook(() => {
       if (updates.subscription !== undefined) payload.subscription = updates.subscription;
       if (updates.name !== undefined) payload.name = updates.name;
 
-      const response = await fetch(`${baseUrl}/api/trpc/auth.updateUserData`, {
+      const url = `${baseUrl}/api/trpc/auth.updateUserData`;
+      console.log("[AppContext] Fetch URL:", url);
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ json: payload }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const text = await response.text();
@@ -184,8 +194,14 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
       await response.json();
       console.log("[AppContext] ✓ Synced to database");
-    } catch (error) {
-      console.error("[AppContext] Failed to sync to database:", error);
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.error("[AppContext] Sync timeout: Server not responding");
+      } else if (error.message === 'Failed to fetch' || error.message?.includes('Network')) {
+        console.error("[AppContext] Network error: Backend server may not be running");
+      } else {
+        console.error("[AppContext] Failed to sync to database:", error.message || error);
+      }
     }
   }, [sessionToken, state.isAuthenticated]);
 
