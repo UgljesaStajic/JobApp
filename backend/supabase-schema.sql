@@ -31,23 +31,29 @@ DROP POLICY IF EXISTS "Service role can manage all data" ON public.users;
 DROP POLICY IF EXISTS "Users can insert own data" ON public.users;
 DROP POLICY IF EXISTS "Users can update own data" ON public.users;
 DROP POLICY IF EXISTS "Users can delete own data" ON public.users;
+DROP POLICY IF EXISTS "Service role bypass all" ON public.users;
 
--- Service role bypass (allows backend operations)
--- This policy allows service_role to bypass RLS completely
-CREATE POLICY "Service role can manage all data" 
+-- CRITICAL: Service role must be able to bypass ALL RLS restrictions
+-- This policy MUST come first and allows service_role to do everything
+CREATE POLICY "Service role bypass all" 
   ON public.users
-  USING (auth.role() = 'service_role')
-  WITH CHECK (auth.role() = 'service_role');
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
 
 -- Users can only read their own data
 CREATE POLICY "Users can view own data" 
   ON public.users FOR SELECT 
+  TO authenticated
   USING (auth.uid() = id);
 
 -- Users can update their own data
 CREATE POLICY "Users can update own data" 
   ON public.users FOR UPDATE 
-  USING (auth.uid() = id);
+  TO authenticated
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
 
 -- Create index for faster lookups
 CREATE INDEX IF NOT EXISTS users_email_idx ON public.users(email);
